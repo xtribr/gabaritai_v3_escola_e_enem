@@ -4921,6 +4921,7 @@ export default function Home() {
       }
 
       // Fechar dialogs após cálculo
+      setAnswerKeyDialogOpen(false);  // Fecha dialog do gabarito
       setEditAnswersDialogOpen(false);
 
       // Navegar para aba Scores para ver os resultados
