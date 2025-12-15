@@ -4993,15 +4993,6 @@ export default function Home() {
 
       // Cálculo bem-sucedido - agora fechamos o dialog
       setAnswerKeyDialogOpen(false);
-    } catch (error: any) {
-      console.error("[TRI] Erro capturado em handleCalculateTRI:", error);
-      toast({
-        title: "Erro ao calcular TRI",
-        description: error?.message || "Erro desconhecido durante o cálculo TRI",
-        variant: "destructive",
-      });
-      return;
-    }
 
       const { triScoresMap, triScoresByAreaMap } = triV2Result;
 
@@ -5036,10 +5027,10 @@ export default function Home() {
 
       setTimeout(() => setMainActiveTab("tri"), 150);
     } catch (error: any) {
-      // Captura erros não previstos na lógica de ENEM
-      console.error("[TRI ENEM] Erro não tratado:", error);
+      // Captura erros na lógica de ENEM
+      console.error("[TRI ENEM] Erro:", error);
       toast({
-        title: "Erro inesperado",
+        title: "Erro ao calcular TRI",
         description: error?.message || "Erro desconhecido ao processar TRI",
         variant: "destructive",
       });
