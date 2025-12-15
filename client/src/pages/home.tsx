@@ -4798,8 +4798,22 @@ export default function Home() {
 
       // AUTO-SALVAR no projeto escola se estiver processando uma NOVA prova (não uma prova já salva)
       // Usar a mesma condição já calculada no início
-      if (isNovaProvaParaSalvar && projetoEscolaAtual) {
+      if (isNovaProvaParaSalvar) {
         console.log('[TRI ESCOLA] Auto-salvando nova prova no projeto...');
+
+        // Se não existe projeto, criar um novo automaticamente
+        let projetoParaSalvar = projetoEscolaAtual;
+        if (!projetoParaSalvar) {
+          console.log('[TRI ESCOLA] Projeto não existe, criando novo automaticamente...');
+          projetoParaSalvar = {
+            id: `projeto_${Date.now()}`,
+            nome: `Projeto Automático - ${new Date().toLocaleDateString('pt-BR')}`,
+            criado: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            provas: [],
+            alunosUnicos: [],
+          };
+        }
 
         // Calcular resultados para cada aluno
         const resultados = students.map(student => {
@@ -4852,9 +4866,9 @@ export default function Home() {
 
         // Atualizar projeto
         const projetoAtualizado: ProjetoEscola = {
-          ...projetoEscolaAtual,
+          ...projetoParaSalvar,
           updatedAt: new Date().toISOString(),
-          provas: [...projetoEscolaAtual.provas, novaProva],
+          provas: [...projetoParaSalvar.provas, novaProva],
         };
 
         // Atualizar alunosUnicos
@@ -4869,9 +4883,16 @@ export default function Home() {
         projetoAtualizado.alunosUnicos = Array.from(alunosMap.values());
 
         // Salvar
-        const novosProjetos = projetosEscolaSalvos.map(p =>
-          p.id === projetoAtualizado.id ? projetoAtualizado : p
-        );
+        let novosProjetos = projetosEscolaSalvos;
+        // Se é um projeto novo (não estava em projetosEscolaSalvos), adicionar
+        if (!novosProjetos.some(p => p.id === projetoAtualizado.id)) {
+          novosProjetos = [...novosProjetos, projetoAtualizado];
+        } else {
+          // Se já existe, atualizar
+          novosProjetos = novosProjetos.map(p =>
+            p.id === projetoAtualizado.id ? projetoAtualizado : p
+          );
+        }
         localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
         setProjetosEscolaSalvos(novosProjetos);
         setProjetoEscolaAtual(projetoAtualizado);
@@ -4888,7 +4909,7 @@ export default function Home() {
 
         toast({
           title: "Disciplina Salva!",
-          description: `${disciplinaAtual} (${resultados.length} alunos) adicionada ao projeto "${projetoEscolaAtual.nome}". Total: ${projetoAtualizado.provas.length} disciplinas.`,
+          description: `${disciplinaAtual} (${resultados.length} alunos) adicionada ao projeto "${projetoAtualizado.nome}". Total: ${projetoAtualizado.provas.length} disciplinas.`,
         });
 
         console.log('[TRI ESCOLA] Prova salva!', novaProva.disciplina, novaProva.resultados.length, 'alunos');
