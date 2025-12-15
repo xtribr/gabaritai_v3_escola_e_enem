@@ -396,7 +396,6 @@ export default function Home() {
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number>(enemDia1Idx >= 0 ? enemDia1Idx : 0);
   const [customValidAnswers, setCustomValidAnswers] = useState<string>("A,B,C,D,E");
   const [escolaAlternativesCount, setEscolaAlternativesCount] = useState<number>(5); // 4 = A-D, 5 = A-E para modo escola
-  const [passingScore, setPassingScore] = useState<number>(60);
   const [enableOcr, setEnableOcr] = useState<boolean>(true); // GPT Vision OCR ativado por padrão
   
   // PDF Generation from CSV
@@ -442,7 +441,6 @@ export default function Home() {
       if (fallbackIdx >= 0) {
         setSelectedTemplateIndex(fallbackIdx);
         setNumQuestions(predefinedTemplates[fallbackIdx].totalQuestions);
-        setPassingScore(predefinedTemplates[fallbackIdx].passingScore);
       }
     }
   }, [selectedTemplate.name]);
@@ -970,7 +968,7 @@ export default function Home() {
       studentStats: studentStats.length > 0 ? studentStats : undefined,
       turmaStats: turmaStats.length > 0 ? turmaStats : undefined,
     };
-  }, [studentsWithScores, answerKey, passingScore, questionContents, triScores, triScoresByArea, appMode, currentExamConfiguration]);
+  }, [studentsWithScores, answerKey, questionContents, triScores, triScoresByArea, appMode, currentExamConfiguration]);
 
   const scoreDistribution = useMemo(() => {
     if (studentsWithScores.length === 0 || answerKey.length === 0) return [];
@@ -5913,7 +5911,6 @@ export default function Home() {
                                 // CRÍTICO: Garantir que "ENEM - Dia 2" sempre use 90 questões
                                 const finalNumQuestions = template.name === "ENEM - Dia 2" ? 90 : newNumQuestions;
                                 setNumQuestions(finalNumQuestions);
-                                setPassingScore(template.passingScore);
 
                                 // CRÍTICO: Para "ENEM - Dia 2", usar questionNumbers 91-180
                                 const isDia2 = template.name === "ENEM - Dia 2";
@@ -6000,19 +5997,6 @@ export default function Home() {
                             )}
                           </div>
                         )}
-                        
-                        <div className="space-y-2">
-                          <Label>Nota Mínima para Aprovação (%)</Label>
-                          <Input
-                            type="number"
-                            value={passingScore}
-                            onChange={(e) => setPassingScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 60)))}
-                            className="h-9"
-                            min={0}
-                            max={100}
-                            data-testid="input-passing-score"
-                          />
-                        </div>
                       </div>
 
                       <div className="flex items-center gap-4 flex-wrap">
