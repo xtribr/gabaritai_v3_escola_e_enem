@@ -4747,6 +4747,44 @@ export default function Home() {
       setTriScoresByArea(triScoresByAreaMap);
       setTriScoresCount(triScoresMap.size);
 
+      // SEMPRE salvar os resultados TRI de volta na prova (seja nova ou recalculada)
+      if (projetoEscolaAtual && projetoEscolaAtual.provas.length > 0) {
+        const provaIdx = provaEscolaSelecionadaIndex ?? 0;
+        const provaSelecionada = projetoEscolaAtual.provas[provaIdx];
+
+        // Atualizar resultados da prova com as notas TRI
+        const resultadosAtualizados = provaSelecionada.resultados.map(resultado => {
+          const triScore = triScoresMap.get(resultado.alunoId) || 0;
+          return {
+            ...resultado,
+            notaTRI: parseFloat(triScore.toFixed(2)),
+          };
+        });
+
+        // Atualizar a prova no projeto
+        const provasAtualizadas = projetoEscolaAtual.provas.map((p, idx) =>
+          idx === provaIdx
+            ? { ...p, resultados: resultadosAtualizados }
+            : p
+        );
+
+        const projetoAtualizado: ProjetoEscola = {
+          ...projetoEscolaAtual,
+          updatedAt: new Date().toISOString(),
+          provas: provasAtualizadas,
+        };
+
+        // Salvar no localStorage
+        const novosProjetos = projetosEscolaSalvos.map(p =>
+          p.id === projetoAtualizado.id ? projetoAtualizado : p
+        );
+        localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
+        setProjetosEscolaSalvos(novosProjetos);
+        setProjetoEscolaAtual(projetoAtualizado);
+
+        console.log('[TRI ESCOLA] Resultados TRI salvos na prova:', provaSelecionada.disciplina);
+      }
+
       // AUTO-SALVAR no projeto escola se estiver processando uma NOVA prova (não uma prova já salva)
       // Usar a mesma condição já calculada no início
       if (isNovaProvaParaSalvar && projetoEscolaAtual) {
