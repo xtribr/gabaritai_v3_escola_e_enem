@@ -2725,16 +2725,26 @@ export default function Home() {
       });
       return;
     }
-    
+
+    // 🔒 REGRA DE OURO: Em modo ESCOLA, NÃO PODE salvar no servidor (API ENEM)!
+    if (appMode === "escola") {
+      toast({
+        title: "❌ Modo Incorreto",
+        description: "Em modo ESCOLA, o projeto é salvo automaticamente. Não use esta função!",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setProjetosLoading(true);
-      
+
       // Determinar quais dias foram processados baseado no template
       const templateName = predefinedTemplates[selectedTemplateIndex]?.name || "";
       const isDia1 = templateName === "ENEM - Dia 1";
       const isDia2 = templateName === "ENEM - Dia 2";
       const isENEMCompleto = templateName === "ENEM" || numQuestions >= 180;
-      
+
       // CRÍTICO: Usar studentsWithScores para salvar dados completos (com areaCorrectAnswers, areaScores, etc.)
       const studentsParaSalvar = studentsWithScores.map(s => ({
         id: s.id,
