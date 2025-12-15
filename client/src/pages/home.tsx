@@ -5796,8 +5796,8 @@ export default function Home() {
                       </DialogDescription>
                     </DialogHeader>
 
-                    {/* Seção de Configurações Personalizadas */}
-                    {!mounted ? null : (
+                    {/* Seção de Configurações Personalizadas - APENAS ENEM */}
+                    {!mounted ? null : appMode === "enem" && (
                       <div className="space-y-3 border rounded-lg p-3 bg-blue-50/50 dark:bg-blue-950/30">
                         <div className="flex items-center justify-between">
                           <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-200">
@@ -5953,178 +5953,51 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* MODO ESCOLA: Projeto e Configuração */}
+                        {/* MODO ESCOLA: Interface Simplificada */}
                         {appMode === "escola" && (
-                          <div className="space-y-4">
-                            {/* Seção do Projeto */}
-                            <div className="space-y-2">
-                              <Label className="flex items-center gap-2">
-                                <Folder className="h-4 w-4" />
-                                Projeto/Turma
-                              </Label>
-                              {projetoEscolaAtual ? (
-                                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <p className="font-semibold text-blue-800 dark:text-blue-200">
-                                        {projetoEscolaAtual.nome}
-                                      </p>
-                                      <p className="text-xs text-blue-600 dark:text-blue-400">
-                                        {projetoEscolaAtual.provas.length} prova(s) • {projetoEscolaAtual.alunosUnicos.length} aluno(s)
-                                      </p>
-                                    </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setShowProjetoDialog(true)}
-                                    >
+                          <div className="space-y-3">
+                            {/* Projeto (compacto) - só mostra se tiver projeto ou projetos salvos */}
+                            {(projetoEscolaAtual || projetosEscolaSalvos.length > 0) && (
+                              <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-900/50 rounded-lg border">
+                                <Folder className="h-4 w-4 text-slate-500" />
+                                {projetoEscolaAtual ? (
+                                  <>
+                                    <span className="text-sm font-medium flex-1">{projetoEscolaAtual.nome}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {projetoEscolaAtual.provas.map(p => p.abreviacao).join(", ") || "Sem provas"}
+                                    </span>
+                                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setShowProjetoDialog(true)}>
                                       Trocar
                                     </Button>
-                                  </div>
-                                  {projetoEscolaAtual.provas.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-700">
-                                      <p className="text-xs text-blue-600 dark:text-blue-400">
-                                        Provas: {projetoEscolaAtual.provas.map(p => p.abreviacao).join(", ")}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                                      Crie ou selecione um projeto para salvar as provas
-                                    </p>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="flex-1"
-                                      onClick={() => setShowProjetoDialog(true)}
-                                    >
-                                      <Plus className="h-4 w-4 mr-1" />
-                                      Novo Projeto
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-sm text-muted-foreground flex-1">Nenhum projeto</span>
+                                    <Button variant="outline" size="sm" className="h-7" onClick={() => setShowProjetoDialog(true)}>
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      Novo
                                     </Button>
                                     {projetosEscolaSalvos.length > 0 && (
-                                      <Select
-                                        onValueChange={(id) => {
-                                          const proj = projetosEscolaSalvos.find(p => p.id === id);
-                                          if (proj) setProjetoEscolaAtual(proj);
-                                        }}
-                                      >
-                                        <SelectTrigger className="flex-1">
-                                          <SelectValue placeholder="Abrir existente..." />
+                                      <Select onValueChange={(id) => {
+                                        const proj = projetosEscolaSalvos.find(p => p.id === id);
+                                        if (proj) setProjetoEscolaAtual(proj);
+                                      }}>
+                                        <SelectTrigger className="h-7 w-auto">
+                                          <SelectValue placeholder="Abrir..." />
                                         </SelectTrigger>
                                         <SelectContent>
                                           {projetosEscolaSalvos.map(proj => (
                                             <SelectItem key={proj.id} value={proj.id}>
-                                              {proj.nome} ({proj.provas.length} provas)
+                                              {proj.nome} ({proj.provas.length})
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
                                       </Select>
                                     )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* ACESSO RÁPIDO: Projetos Salvos */}
-                            {projetosEscolaSalvos.length > 0 && (
-                              <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border">
-                                <Label className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                                  <Folder className="h-4 w-4" />
-                                  Projetos Salvos ({projetosEscolaSalvos.length})
-                                </Label>
-                                <div className="max-h-32 overflow-y-auto space-y-1">
-                                  {projetosEscolaSalvos.map(proj => (
-                                    <div
-                                      key={proj.id}
-                                      className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-all ${
-                                        projetoEscolaAtual?.id === proj.id
-                                          ? "bg-blue-100 dark:bg-blue-900/50 border border-blue-300"
-                                          : "hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      }`}
-                                      onClick={() => setProjetoEscolaAtual(proj)}
-                                    >
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium truncate">{proj.nome}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {proj.provas.map(p => p.abreviacao).join(", ") || "Sem provas"}
-                                        </p>
-                                      </div>
-                                      {proj.provas.length > 0 && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 px-2 text-xs text-green-600 hover:text-green-700 hover:bg-green-50 ml-2"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setProjetoEscolaAtual(proj);
-                                            setMainActiveTab("scores");
-                                            toast({
-                                              title: "Boletim aberto!",
-                                              description: `${proj.nome} - ${proj.provas.length} prova(s)`,
-                                            });
-                                          }}
-                                        >
-                                          <FileText className="h-3 w-3 mr-1" />
-                                          Boletim
-                                        </Button>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                                  </>
+                                )}
                               </div>
                             )}
-
-                            {/* Disciplina atual sendo corrigida */}
-                            {projetoEscolaAtual && (
-                              <div className="space-y-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                                <Label className="text-green-800 dark:text-green-200">Disciplina Atual</Label>
-                                <div className="flex gap-2">
-                                  <Input
-                                    placeholder="Ex: Português"
-                                    value={disciplinaAtual}
-                                    onChange={(e) => setDisciplinaAtual(e.target.value)}
-                                    className="flex-1"
-                                  />
-                                  <Input
-                                    placeholder="POR"
-                                    value={abreviacaoAtual}
-                                    onChange={(e) => setAbreviacaoAtual(e.target.value.toUpperCase().slice(0, 4))}
-                                    className="w-20"
-                                    maxLength={4}
-                                  />
-                                </div>
-                                <p className="text-xs text-green-600 dark:text-green-400">
-                                  Informe a disciplina antes de salvar a prova no projeto
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Configuração da prova */}
-                            <div className="space-y-2">
-                              <Label>Configuração da Prova</Label>
-                              {currentExamConfiguration ? (
-                                <div className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-lg border border-slate-200 dark:border-slate-700">
-                                  <p className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {currentExamConfiguration.name}
-                                  </p>
-                                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                                    {currentExamConfiguration.totalQuestions} questões •
-                                    Nota máxima: {currentExamConfiguration.maxScoreTCT}
-                                  </p>
-                                </div>
-                              ) : (
-                                <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                                    Configure uma prova primeiro usando o botão acima
-                                  </p>
-                                </div>
-                              )}
-                            </div>
                           </div>
                         )}
                         
