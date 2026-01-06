@@ -1725,13 +1725,13 @@ export async function registerRoutes(
           });
 
           // Log de payload (amostra) para auditar entrada do Python
-          const aluno0 = alunosParaPython[0];
+          const aluno0 = alunosParaPython[0] as Record<string, unknown>;
           if (aluno0) {
-            const q1 = aluno0.q1 || "";
-            const q2 = aluno0.q2 || "";
-            const q3 = aluno0.q3 || "";
-            const q4 = aluno0.q4 || "";
-            const q5 = aluno0.q5 || "";
+            const q1 = (aluno0['q1'] as string) || "";
+            const q2 = (aluno0['q2'] as string) || "";
+            const q3 = (aluno0['q3'] as string) || "";
+            const q4 = (aluno0['q4'] as string) || "";
+            const q5 = (aluno0['q5'] as string) || "";
             console.log(`[TRI][PY-REQ] Área ${area} (amostra envio): id=${aluno0.id || aluno0.nome} ` +
               `q1..q5=${q1},${q2},${q3},${q4},${q5} | g1..g5=${gabaritoObj['1']},${gabaritoObj['2']},${gabaritoObj['3']},${gabaritoObj['4']},${gabaritoObj['5']} | acertos=${aluno0.acertos ?? '-'}`);
           }
@@ -1952,7 +1952,7 @@ export async function registerRoutes(
         name: s.studentName || s.studentNumber,
         tri: triScores[s.id],
         areas: triScoresByArea?.[s.id] || {}
-      })).sort((a, b) => (a.tri || 0) - (b.tri || 0));
+      })).sort((a: { name: string; tri: number; areas: Record<string, number> }, b: { name: string; tri: number; areas: Record<string, number> }) => (a.tri || 0) - (b.tri || 0));
 
       const top3 = studentsByPerformance.slice(-3).reverse();
       const bottom3 = studentsByPerformance.slice(0, 3);
@@ -1988,10 +1988,10 @@ ${analiseHabilidades}
 
 👥 DESTAQUES INDIVIDUAIS:
 Melhores desempenhos:
-${top3.map((s, i) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
+${top3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
 
 Precisam atenção urgente:
-${bottom3.map((s, i) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
+${bottom3.map((s: { name: string; tri: number; areas: Record<string, number> }, i: number) => `${i+1}. ${s.name}: ${Math.round(s.tri)} (LC:${Math.round(s.areas.LC||0)} CH:${Math.round(s.areas.CH||0)} CN:${Math.round(s.areas.CN||0)} MT:${Math.round(s.areas.MT||0)})`).join('\n')}
 
 🎯 FORNEÇA ANÁLISE ESTRUTURADA:
 

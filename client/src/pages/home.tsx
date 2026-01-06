@@ -3043,7 +3043,7 @@ export default function Home() {
         
         // Restaurar TRI scores se existir
         if (projeto.triScores) {
-          const triScoresMap = new Map(Object.entries(projeto.triScores));
+          const triScoresMap = new Map<string, number>(Object.entries(projeto.triScores) as [string, number][]);
           setTriScores(triScoresMap);
           // CRÍTICO: Atualizar o contador para que os cards apareçam
           setTriScoresCount(triScoresMap.size);
@@ -5049,19 +5049,9 @@ export default function Home() {
     }
 
     // Determinar áreas para cálculo TRI
-    // MODO ESCOLA: Sempre criar área GERAL, independente do template
-    let areas: { area: string; start: number; end: number }[] = [];
-
-    if (appMode === "escola") {
-      // No modo escola, ignorar o template do ENEM e criar uma área GERAL
-      const totalQuestoes = numQuestions || finalAnswerKey.length;
-      areas = [{ area: "GERAL", start: 1, end: totalQuestoes }];
-      console.log('[TRI ESCOLA] Modo escola - criando área GERAL:', areas, 'totalQuestoes:', totalQuestoes);
-    } else {
-      // Modo ENEM: usar áreas do template
-      areas = getAreasByTemplate(selectedTemplate.name, numQuestions);
-      console.log('[TRI ENEM] template', selectedTemplate.name, 'numQuestions', numQuestions, 'areas', areas);
-    }
+    // Neste ponto, estamos no modo ENEM (escola já retornou acima)
+    const areas = getAreasByTemplate(selectedTemplate.name, numQuestions);
+    console.log('[TRI ENEM] template', selectedTemplate.name, 'numQuestions', numQuestions, 'areas', areas);
 
     console.log('[TRI] Áreas finais:', areas, 'appMode:', appMode, 'Chamando calculateTRIV2...');
 
@@ -7245,7 +7235,7 @@ export default function Home() {
                   </div>
                 </div>
                 {/* Console de Processamento */}
-                {(status === "processing" || status === "completed") && processingLogs.length > 0 && (
+                {status === "processing" && processingLogs.length > 0 && (
                   <div className="mt-4 w-full max-w-xl">
                     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-xl">
                       <div className="px-3 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
@@ -7257,9 +7247,7 @@ export default function Home() {
                           </div>
                           <span className="text-sm text-gray-400 font-mono">Console OMR</span>
                         </div>
-                        {status === "completed" && (
-                          <span className="text-xs text-green-400 font-mono animate-pulse">✓ Completo</span>
-                        )}
+                        {/* Indicador de completo removido - este bloco só aparece durante processing */}
                       </div>
                       <div className="p-3 max-h-52 overflow-y-auto font-mono text-xs space-y-1" style={{ scrollBehavior: 'smooth' }}>
                         {processingLogs.slice(-20).map((log, idx) => (
@@ -7276,22 +7264,10 @@ export default function Home() {
                             <span>{log.message}</span>
                           </div>
                         ))}
-                {status === "processing" && (
-                          <div className="flex items-center gap-1 text-gray-500">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                            <span className="animate-pulse">_</span>
-                          </div>
-                        )}
-                        {status === "completed" && (
-                          <div className="mt-2 pt-2 border-t border-gray-700">
-                            <div className="text-green-400 font-bold">
-                              🎉 Processamento finalizado com sucesso!
-                            </div>
-                            <div className="text-gray-400 text-[10px] mt-1">
-                              Confira os resultados na tabela abaixo.
-                            </div>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1 text-gray-500">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span className="animate-pulse">_</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -10759,7 +10735,7 @@ export default function Home() {
                                   {(stat.blankCount || 0) > 0 && (
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <span className="w-4">?:</span>
-                                      <span>{stat.blankCount} em branco ({((stat.blankCount / statistics.totalStudents) * 100).toFixed(0)}%)</span>
+                                      <span>{stat.blankCount} em branco ({(((stat.blankCount || 0) / statistics.totalStudents) * 100).toFixed(0)}%)</span>
                                     </div>
                                   )}
                                 </div>

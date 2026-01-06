@@ -16,6 +16,9 @@ export const studentDataSchema = z.object({
   correctAnswers: z.number().optional(),
   wrongAnswers: z.number().optional(),
   areaScores: z.record(z.string(), z.number()).optional(),
+  areaCorrectAnswers: z.record(z.string(), z.number()).optional(),
+  triScore: z.number().optional(),
+  name: z.string().optional(), // Alias for studentName
 });
 
 export const questionContentSchema = z.object({
@@ -42,6 +45,7 @@ export const examTemplateSchema = z.object({
   validAnswers: z.array(z.string()),
   passingScore: z.number(),
   createdAt: z.string(),
+  ano: z.number().optional(),
 });
 
 export const predefinedTemplates: Array<Omit<z.infer<typeof examTemplateSchema>, "id" | "createdAt">> = [
@@ -132,6 +136,9 @@ export const examStatisticsSchema = z.object({
     wrongCount: z.number(),
     correctPercentage: z.number(),
     content: z.string().optional(),
+    correctAnswer: z.string().optional(),
+    distribution: z.record(z.string(), z.number()).optional(),
+    blankCount: z.number().optional(),
   })),
   contentStats: z.array(z.object({
     content: z.string(),
