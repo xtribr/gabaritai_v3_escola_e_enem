@@ -6,7 +6,11 @@
   "installCommand": "npm install",
   "rewrites": [
     {
-      "source": "/((?!api|assets|favicon.ico|.*\\..*).*)",
+      "source": "/api/:path*",
+      "destination": "https://xtri-gabaritos-api.fly.dev/api/:path*"
+    },
+    {
+      "source": "/((?!assets|favicon.ico|.*\\..*).*)",
       "destination": "/index.html"
     }
   ],
