@@ -46,6 +46,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import type { StudentData, ExamStatistics, ExamConfiguration, ProjetoEscola, ProvaCorrigida, ResultadoAlunoProva } from "@shared/schema";
+import { uploadUrl } from "@/lib/api";
 import { predefinedTemplates } from "@shared/schema";
 import { ExamConfigurationWizard } from "@/components/ExamConfigurationWizard";
 import { ModeSelector, type AppMode } from "@/components/ModeSelector";
@@ -1248,7 +1249,7 @@ export default function Home() {
       
       let response;
       try {
-        response = await fetch("/api/process-pdf", {
+        response = await fetch(uploadUrl("/api/process-pdf"), {
           method: "POST",
           body: formData,
         });
@@ -1278,7 +1279,7 @@ export default function Home() {
 
       const poll = async () => {
         try {
-          const statusRes = await fetch(`/api/process-pdf/${jobId}/status`);
+          const statusRes = await fetch(uploadUrl(`/api/process-pdf/${jobId}/status`));
           if (!statusRes.ok) throw new Error("Erro ao verificar status");
           
           const statusData = await statusRes.json();
@@ -1336,7 +1337,7 @@ export default function Home() {
             addProcessingLog('✅ Processamento OMR concluído!', 'success');
             addProcessingLog('📥 Obtendo resultados finais...', 'info');
             
-            const resultsRes = await fetch(`/api/process-pdf/${jobId}/results`);
+            const resultsRes = await fetch(uploadUrl(`/api/process-pdf/${jobId}/results`));
             if (!resultsRes.ok) throw new Error("Erro ao obter resultados");
             
             const results = await resultsRes.json();
@@ -3209,7 +3210,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append("pdf", queuedFile.file);
 
-    const response = await fetch("/api/process-pdf", {
+    const response = await fetch(uploadUrl("/api/process-pdf"), {
       method: "POST",
       body: formData,
     });
@@ -5559,7 +5560,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("csv", file);
       
-      const response = await fetch("/api/preview-csv", {
+      const response = await fetch(uploadUrl("/api/preview-csv"), {
         method: "POST",
         body: formData,
       });
@@ -5610,7 +5611,7 @@ export default function Home() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
       
-      const response = await fetch("/api/generate-pdfs", {
+      const response = await fetch(uploadUrl("/api/generate-pdfs"), {
         method: "POST",
         body: formData,
         signal: controller.signal,
