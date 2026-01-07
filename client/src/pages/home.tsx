@@ -322,6 +322,11 @@ export default function Home() {
   const [scanQualityIssues, setScanQualityIssues] = useState<Array<{ page: number; quality: string; issues: string[]; canReprocess: boolean }>>([]);
   const [pageConfidences, setPageConfidences] = useState<Map<number, number>>(new Map());
   const [isBatchMode, setIsBatchMode] = useState<boolean>(false);
+
+  // Estados para modo lote aprimorado (acumulação de múltiplos PDFs)
+  const [batchAccumulatedStudents, setBatchAccumulatedStudents] = useState<StudentData[]>([]);
+  const [batchProcessedFiles, setBatchProcessedFiles] = useState<string[]>([]);
+  const [batchAccumulationMode, setBatchAccumulationMode] = useState<boolean>(false);
   
   // Estado para relatório de problemas do coordenador
   const [problemReportOpen, setProblemReportOpen] = useState(false);
@@ -3340,10 +3345,14 @@ export default function Home() {
     setStatus("processing");
     // NÃO limpa mais os alunos existentes - vai fazer merge
     setErrorMessage("");
-    
-    let allStudents: StudentData[] = [...students]; // Começa com alunos existentes
+
+    // Se modo acumulação está ativo, começar com alunos acumulados
+    let allStudents: StudentData[] = batchAccumulationMode
+      ? [...batchAccumulatedStudents]
+      : [...students];
     let processedCount = 0;
     let errorCount = 0;
+    const newProcessedFiles: string[] = [...batchProcessedFiles];
 
     for (const queuedFile of fileQueue) {
       if (queuedFile.status === "error") {
@@ -3351,8 +3360,8 @@ export default function Home() {
         continue;
       }
 
-      setFileQueue(prev => prev.map(f => 
-        f.id === queuedFile.id 
+      setFileQueue(prev => prev.map(f =>
+        f.id === queuedFile.id
           ? { ...f, status: "processing" }
           : f
       ));
@@ -3363,24 +3372,28 @@ export default function Home() {
         allStudents = mergeStudents(allStudents, fileStudents);
         setStudents([...allStudents]);
         processedCount++;
-        
-        setFileQueue(prev => prev.map(f => 
-          f.id === queuedFile.id 
+        newProcessedFiles.push(queuedFile.file.name);
+
+        setFileQueue(prev => prev.map(f =>
+          f.id === queuedFile.id
             ? { ...f, status: "completed", studentCount: fileStudents.length }
             : f
         ));
       } catch (error) {
         errorCount++;
-        setFileQueue(prev => prev.map(f => 
-          f.id === queuedFile.id 
+        setFileQueue(prev => prev.map(f =>
+          f.id === queuedFile.id
             ? { ...f, status: "error", error: error instanceof Error ? error.message : "Erro desconhecido" }
             : f
         ));
       }
     }
 
+    // Atualizar estados de acumulação
+    setBatchAccumulatedStudents([...allStudents]);
+    setBatchProcessedFiles(newProcessedFiles);
     setStatus("completed");
-    
+
     if (errorCount > 0) {
       toast({
         title: "Processamento com erros",
@@ -3392,6 +3405,65 @@ export default function Home() {
         title: "Processamento em lote concluído",
         description: `${processedCount} arquivo(s) processado(s). Total: ${allStudents.length} aluno(s).`,
       });
+    }
+  };
+
+  // Funções para modo lote aprimorado
+  const handleClearBatch = () => {
+    setBatchAccumulatedStudents([]);
+    setBatchProcessedFiles([]);
+    setStudents([]);
+    setFileQueue([]);
+    setIsBatchMode(false);
+    toast({
+      title: "Lote limpo",
+      description: "Todos os alunos acumulados foram removidos.",
+    });
+  };
+
+  const handleFinalizeBatchAndCalculateTRI = async () => {
+    if (students.length === 0) {
+      toast({
+        title: "Nenhum aluno",
+        description: "Processe pelo menos um arquivo antes de calcular TRI.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "🔄 Calculando TRI...",
+      description: `Processando ${students.length} alunos de ${batchProcessedFiles.length} arquivo(s)...`,
+    });
+
+    // Chamar calculateTRIV2 com os dados acumulados
+    try {
+      const triResult = await calculateTRIV2(answerKey, students, selectedTemplate.name);
+      if (triResult) {
+        toast({
+          title: "✅ TRI Calculada!",
+          description: `Notas calculadas para ${students.length} aluno(s).`,
+        });
+        // Limpar fila após finalização bem-sucedida
+        setFileQueue([]);
+        setIsBatchMode(false);
+      }
+    } catch (error) {
+      toast({
+        title: "Erro no cálculo TRI",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddMoreFilesToBatch = () => {
+    // Ativar modo acumulação para próximos uploads
+    setBatchAccumulationMode(true);
+    // Trigger file input
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
     }
   };
 
@@ -7116,6 +7188,53 @@ export default function Home() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
+                {/* Indicador de alunos acumulados */}
+                {(students.length > 0 || batchProcessedFiles.length > 0) && (
+                  <div className="mb-4 p-3 rounded-md bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                          Lote: {students.length} aluno{students.length !== 1 ? "s" : ""} de {batchProcessedFiles.length} arquivo{batchProcessedFiles.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddMoreFilesToBatch}
+                          className="text-xs"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Adicionar PDF
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleClearBatch}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Limpar Lote
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleFinalizeBatchAndCalculateTRI}
+                          className="text-xs bg-green-600 hover:bg-green-700"
+                          disabled={answerKey.length === 0}
+                        >
+                          <Calculator className="h-3 w-3 mr-1" />
+                          Finalizar e Calcular TRI
+                        </Button>
+                      </div>
+                    </div>
+                    {batchProcessedFiles.length > 0 && (
+                      <div className="mt-2 text-xs text-green-600 dark:text-green-400">
+                        Arquivos: {batchProcessedFiles.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   {fileQueue.map((qf) => (
                     <div
