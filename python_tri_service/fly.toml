@@ -1,0 +1,37 @@
+# =============================================================================
+# GabaritAI TRI Service - Fly.io Configuration
+# =============================================================================
+# Deploy: cd python_tri_service && fly deploy
+# Logs: fly logs -a xtri-gabaritos-tri
+# =============================================================================
+
+app = "xtri-gabaritos-tri"
+primary_region = "gru"
+
+[build]
+
+[env]
+  PYTHONUNBUFFERED = "1"
+
+[http_service]
+  internal_port = 5003
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[checks]
+  [checks.health]
+    port = 5003
+    type = "http"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

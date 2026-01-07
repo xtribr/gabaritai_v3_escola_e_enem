@@ -13,6 +13,46 @@ declare module "http" {
   }
 }
 
+// -----------------------------------------------------------------------------
+// CORS Configuration for Production
+// -----------------------------------------------------------------------------
+const allowedOrigins = [
+  // Development
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:5173",
+  // Production - Vercel (adicione seu domínio real aqui)
+  "https://gabaritai.vercel.app",
+  "https://xtri-gabaritos.vercel.app",
+  // Custom domain from environment
+  process.env.FRONTEND_URL,
+].filter(Boolean) as string[];
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  // Allow requests with no origin (mobile apps, Postman, etc.)
+  if (!origin) {
+    return next();
+  }
+
+  // Check if origin is allowed
+  if (allowedOrigins.includes(origin) || process.env.NODE_ENV === "development") {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
+  }
+
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  next();
+});
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {

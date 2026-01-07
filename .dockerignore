@@ -1,0 +1,78 @@
+# =============================================================================
+# GabaritAI - Docker Ignore
+# =============================================================================
+# Arquivos ignorados durante docker build para reduzir contexto e imagem
+# =============================================================================
+
+# Dependências (serão instaladas no container)
+node_modules/
+npm-debug.log*
+
+# Build outputs (serão gerados no container)
+dist/
+
+# Código do frontend (não necessário no backend)
+client/
+
+# Serviços Python (têm seus próprios Dockerfiles)
+python_omr_service/
+python_tri_service/
+ocr_service/
+
+# Ambiente e secrets
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# IDE e editores
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+
+# Documentação
+*.md
+docs/
+
+# Dados e uploads (sensíveis - LGPD)
+data/
+uploads/
+exports/
+# Permitir CSVs na pasta tri/ (dados TRI necessários)
+# *.csv - comentado para permitir tri/*.csv
+*.xlsx
+*.xls
+
+# Arquivos temporários
+*.tmp
+*.temp
+*.log
+*.log.*
+.cache/
+.DS_Store
+Thumbs.db
+
+# Testes
+coverage/
+*.test.*
+__tests__/
+
+# Arquivos de configuração desnecessários no runtime
+drizzle.config.ts
+components.json
+vercel.json
+
+# NOTA: vite.config.ts e script/ são necessários para o build
+# fly.toml é ignorado automaticamente pelo Fly.io
+
+# Scripts locais (exceto o necessário para build)
+*.sh
+
+# Arquivos de projeto/PRD
+ralph-parte2/
+attached_assets/
+# tri/ é necessário para dados TRI (cálculo de notas ENEM)

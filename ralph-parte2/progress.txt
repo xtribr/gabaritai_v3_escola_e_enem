@@ -1,0 +1,63 @@
+# Ralph Progress - Gabaritai Parte 2
+
+## Estado: Integração + Deploy
+
+### Parte 1 COMPLETA ✅ (10/10)
+- GAB-101 a GAB-110 todas implementadas
+- Auth funcionando
+- Admin + CSV funcionando
+- Dashboard aluno funcionando
+- Login por matrícula funcionando
+
+### Parte 2 COMPLETA ✅ (15/15)
+- GAB-201 a GAB-215 todas implementadas
+
+---
+
+## Arquitetura de Deploy
+
+| Componente | Destino | URL |
+|------------|---------|-----|
+| Frontend | Vercel | xtri-gabaritos.vercel.app |
+| Backend | Fly.io | xtri-gabaritos-api.fly.dev |
+| OMR | Fly.io | xtri-gabaritos-omr.fly.dev |
+| TRI | Fly.io | xtri-gabaritos-tri.fly.dev |
+| Database | Supabase | *.supabase.co |
+
+---
+
+## APIs que precisam funcionar em produção
+
+### Fluxo de Correção
+```
+1. POST /api/process-pdf (upload)
+2. GET /api/process-pdf/:id/status (polling)
+3. GET /api/process-pdf/:id/results (resultados)
+4. POST /api/avaliacoes (salvar no Supabase) ← NOVO
+```
+
+### Fluxo do Aluno
+```
+1. POST /api/auth/email-by-matricula/:mat (busca email)
+2. Supabase Auth (login)
+3. GET /api/student-answers/:studentId (resultados)
+```
+
+---
+
+## Custos Estimados (por mês)
+
+| Serviço | Plano | Custo |
+|---------|-------|-------|
+| Vercel | Hobby | $0 |
+| Fly.io (3 apps) | Free tier | $0-5 |
+| Supabase | Free tier | $0 |
+| **Total** | | **$0-5/mês** |
+
+---
+
+## Progress Entries
+
+(Ralph adiciona abaixo)
+
+---

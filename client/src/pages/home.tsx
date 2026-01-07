@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { Link } from "wouter";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check } from "lucide-react";
+import { Upload, FileText, Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Loader2, X, FileSpreadsheet, ClipboardList, Calculator, BarChart3, Plus, Minus, Info, HelpCircle, Users, FileUp, Eye, Moon, Sun, TrendingUp, Target, UserCheck, Calendar, History, Save, LogOut, Trophy, Lightbulb, Award, BookOpen, Zap, Brain, Edit, FolderOpen, Folder, ChevronLeft, ChevronRight, GraduationCap, Check, Settings } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ScatterChart, Scatter, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
@@ -48,6 +49,7 @@ import type { StudentData, ExamStatistics, ExamConfiguration, ProjetoEscola, Pro
 import { predefinedTemplates } from "@shared/schema";
 import { ExamConfigurationWizard } from "@/components/ExamConfigurationWizard";
 import { ModeSelector, type AppMode } from "@/components/ModeSelector";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Limites históricos TRI por área (baseado nos dados ENEM 2009-2023)
@@ -172,6 +174,7 @@ interface QueuedFile {
 export default function Home() {
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [appMode, setAppMode] = useState<AppMode>("selector");
 
@@ -391,6 +394,11 @@ export default function Home() {
   const [avaliacaoCarregada, setAvaliacaoCarregada] = useState<string | null>(null); // ID da aplicação carregada
   const [avaliacaoParaDeletar, setAvaliacaoParaDeletar] = useState<AvaliacaoHistorico | null>(null); // Avaliação que será deletada
   const [mostrarSidebar, setMostrarSidebar] = useState<boolean>(true); // Controla visibilidade da sidebar esquerda
+
+  // Estados para publicação de resultados para alunos (GAB-202)
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishTitle, setPublishTitle] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
   
   const enemDia1Idx = predefinedTemplates.findIndex(t => t.name === "ENEM - Dia 1");
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number>(enemDia1Idx >= 0 ? enemDia1Idx : 0);
@@ -6522,6 +6530,23 @@ export default function Home() {
       <div className={`flex-1 flex flex-col transition-all duration-300 ${mostrarSidebar ? 'ml-64' : 'ml-0'}`}>
       <header className="sticky top-0 z-50 border-b border-blue-700 bg-blue-600 shadow-md">
         <div className="max-w-full mx-auto px-8 py-4 flex items-center justify-end gap-4">
+          <Link href="/admin">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 rounded-xl hover:bg-blue-700 text-white border border-blue-500 transition-all hover:scale-105 hover:shadow-md"
+                  data-testid="button-admin"
+                >
+                  <Settings className="h-5 w-5 text-white" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Administração
+              </TooltipContent>
+            </Tooltip>
+          </Link>
           {mounted && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -6869,7 +6894,7 @@ export default function Home() {
                             <div className="flex items-center gap-1.5 ml-3">
                               <div className="flex flex-col items-end flex-shrink-0">
                                 <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                                  {avaliacao.mediaTRI.toFixed(1)}
+                                  {(avaliacao.mediaTRI ?? 0).toFixed(1)}
                                 </div>
                                 <div className="text-[10px] text-purple-600 dark:text-purple-400 uppercase mt-0.5 font-semibold">MÉDIA</div>
                               </div>
@@ -7349,7 +7374,7 @@ export default function Home() {
           <div className="space-y-4 mt-6">
             {/* Status com bonequinhos de alunos - só mostra se tiver students */}
             {students.length > 0 && (
-            <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center gap-4">
+            <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 {/* Bonequinhos de alunos em miniatura */}
                 <div className="flex -space-x-2">
@@ -7384,6 +7409,30 @@ export default function Home() {
                   )}
                 </div>
               </div>
+
+              {/* Botão Publicar para Alunos - só aparece se usuário está logado */}
+              {user && (
+                <Button
+                  onClick={() => {
+                    setPublishTitle("");
+                    setPublishDialogOpen(true);
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isPublishing}
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Publicando...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      📤 Publicar para Alunos
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
             )}
 
@@ -13201,13 +13250,13 @@ export default function Home() {
           )}
           
           <DialogFooter className="gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 // Copiar relatório para clipboard
                 if (problemReport) {
                   const texto = `RELATÓRIO DE PROBLEMAS - ${new Date().toLocaleString('pt-BR')}
-                  
+
 Total de Folhas: ${problemReport.totalStudents}
 Taxa de Detecção: ${((problemReport.totalAnswered / (problemReport.totalStudents * 90)) * 100).toFixed(1)}%
 Questões em Branco: ${problemReport.totalBlank}
@@ -13229,6 +13278,127 @@ ${problemReport.problemPages.map(p => `
             </Button>
             <Button onClick={() => setProblemReportOpen(false)}>
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para publicar resultados para alunos (GAB-202) */}
+      <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>📤 Publicar Resultados para Alunos</DialogTitle>
+            <DialogDescription>
+              Os alunos poderão visualizar seus resultados no dashboard.
+              Informe um nome para identificar esta avaliação.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="publish-title">Nome da Prova/Avaliação</Label>
+              <Input
+                id="publish-title"
+                placeholder="Ex: Simulado Janeiro 2026"
+                value={publishTitle}
+                onChange={(e) => setPublishTitle(e.target.value)}
+                disabled={isPublishing}
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p><strong>{students.length}</strong> aluno(s) serão publicados</p>
+              {answerKey.length > 0 && (
+                <p><strong>{answerKey.length}</strong> questões no gabarito</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPublishDialogOpen(false)}
+              disabled={isPublishing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!publishTitle.trim()) {
+                  toast({
+                    title: "Nome obrigatório",
+                    description: "Informe um nome para a avaliação.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                setIsPublishing(true);
+                try {
+                  // Preparar dados para envio
+                  const payload = {
+                    titulo: publishTitle.trim(),
+                    templateType: predefinedTemplates[selectedTemplateIndex]?.name || "Customizado",
+                    gabarito: answerKey,
+                    questionContents: questionContents.length > 0 ? questionContents : undefined,
+                    students: students.map((student, idx) => {
+                      // Calcular blankAnswers a partir das respostas vazias
+                      const totalQuestions = answerKey.length || student.answers.length;
+                      const blankCount = student.answers.slice(0, totalQuestions).filter(a => !a || a.trim() === '' || a === '-').length;
+
+                      return {
+                        studentNumber: student.studentNumber || `TEMP-${idx + 1}`,
+                        studentName: student.studentName || `Aluno ${idx + 1}`,
+                        turma: student.turma,
+                        answers: student.answers,
+                        score: student.score,
+                        correctAnswers: student.correctAnswers,
+                        wrongAnswers: student.wrongAnswers,
+                        blankAnswers: blankCount,
+                        triScore: triScores.get(student.id) || student.triScore,
+                        areaScores: triScoresByArea.get(student.id) || student.areaScores,
+                        confidence: student.confidence,
+                      };
+                    }),
+                  };
+
+                  const response = await fetch("/api/avaliacoes", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok && result.success) {
+                    toast({
+                      title: "✅ Resultados publicados!",
+                      description: `${result.totalAlunos} aluno(s) podem acessar seus resultados no dashboard.`,
+                    });
+                    setPublishDialogOpen(false);
+                    setPublishTitle("");
+                  } else {
+                    throw new Error(result.error || "Erro ao publicar");
+                  }
+                } catch (error) {
+                  console.error("Erro ao publicar:", error);
+                  toast({
+                    title: "Erro ao publicar",
+                    description: error instanceof Error ? error.message : "Tente novamente.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsPublishing(false);
+                }
+              }}
+              disabled={isPublishing || !publishTitle.trim()}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isPublishing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Publicando...
+                </>
+              ) : (
+                "Publicar Agora"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

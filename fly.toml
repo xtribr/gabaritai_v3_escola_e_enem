@@ -1,0 +1,39 @@
+# =============================================================================
+# GabaritAI Backend - Fly.io Configuration
+# =============================================================================
+# Deploy: fly deploy
+# Secrets: fly secrets set SUPABASE_URL=xxx SUPABASE_SERVICE_KEY=xxx ...
+# Logs: fly logs
+# =============================================================================
+
+app = "xtri-gabaritos-api"
+primary_region = "gru"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[checks]
+  [checks.health]
+    port = 8080
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

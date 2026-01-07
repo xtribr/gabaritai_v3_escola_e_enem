@@ -4,12 +4,17 @@ import path from "path";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
+
+  // Em modo API-only (produção Fly.io), não precisa servir frontend
+  // O frontend está no Vercel
   if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
+    console.log(
+      `[static] Build directory not found: ${distPath}. Running in API-only mode (frontend served from Vercel).`,
     );
+    return;
   }
 
+  console.log(`[static] Serving static files from: ${distPath}`);
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist

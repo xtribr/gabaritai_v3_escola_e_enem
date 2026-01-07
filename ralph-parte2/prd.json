@@ -1,0 +1,276 @@
+{
+  "projectName": "Gabaritai v3 - Parte 2: Integração + Deploy",
+  "description": "Integrar fluxo de correção com Supabase e deploy para Vercel + Fly.io",
+  "branchName": "feature/deploy-production",
+  "createdAt": "2026-01-06",
+  "previousPhase": "Parte 1 completa: Auth, Admin CSV, Dashboard Aluno (10/10 tasks)",
+  "architecture": {
+    "frontend": "Vercel (React + Vite)",
+    "backend": "Fly.io (Express Node.js)",
+    "pythonOMR": "Fly.io (Flask :5002)",
+    "pythonTRI": "Fly.io (Flask :5003)",
+    "database": "Supabase (PostgreSQL + Auth)"
+  },
+  "userStories": [
+    {
+      "id": "GAB-201",
+      "title": "Integrar /api/avaliacoes com Supabase",
+      "description": "Modificar endpoints de avaliações para persistir no Supabase",
+      "acceptanceCriteria": [
+        "POST /api/avaliacoes salva exam no Supabase",
+        "POST /api/avaliacoes salva student_answers vinculando por matrícula",
+        "GET /api/avaliacoes busca do Supabase filtrado por school_id",
+        "GET /api/avaliacoes/:id busca do Supabase",
+        "DELETE /api/avaliacoes/:id deleta do Supabase",
+        "Manter compatibilidade com formato atual do frontend"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "GAB-202",
+      "title": "Botão Publicar para Alunos no home.tsx",
+      "description": "Adicionar botão para salvar resultados processados no Supabase",
+      "acceptanceCriteria": [
+        "Botão '📤 Publicar para Alunos' aparece após processamento completo",
+        "Só aparece se usuário está logado (useAuth)",
+        "Dialog pede: nome da prova, confirmar publicação",
+        "Chama POST /api/avaliacoes com os dados",
+        "Toast de sucesso: 'Resultados publicados! Alunos podem acessar.'",
+        "Toast de erro se falhar",
+        "Desabilita botão durante envio"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "GAB-203",
+      "title": "Transformar StudentData para Supabase",
+      "description": "Função para converter formato do frontend para o banco",
+      "acceptanceCriteria": [
+        "Criar função transformStudentsForSupabase(students, examId, schoolId)",
+        "Mapear: studentNumber → student_number",
+        "Mapear: studentName → student_name",
+        "Mapear: triScore → tri_score",
+        "Mapear: areaScores.lc → tri_lc (etc)",
+        "Adicionar exam_id e school_id",
+        "Calcular blank_answers se não existir",
+        "Retornar array pronto para batch insert"
+      ],
+      "priority": 3,
+      "passes": true
+    },
+    {
+      "id": "GAB-204",
+      "title": "Variáveis de ambiente para produção",
+      "description": "Configurar env vars separadas para dev e prod",
+      "acceptanceCriteria": [
+        "Criar .env.production com variáveis de produção",
+        "VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY para frontend",
+        "SUPABASE_URL, SUPABASE_SERVICE_KEY para backend",
+        "PYTHON_OMR_URL apontando para Fly.io",
+        "PYTHON_TRI_URL apontando para Fly.io",
+        "Atualizar .env.example com todas as variáveis",
+        "Documentar cada variável"
+      ],
+      "priority": 4,
+      "passes": true
+    },
+    {
+      "id": "GAB-205",
+      "title": "Configurar Vercel - Frontend",
+      "description": "Preparar projeto React para deploy no Vercel",
+      "acceptanceCriteria": [
+        "Criar vercel.json na raiz",
+        "Build command: npm run build",
+        "Output directory: dist",
+        "Configurar rewrites para SPA (todas rotas → index.html)",
+        "Framework preset: vite",
+        "Ignorar pasta server/ no deploy do Vercel"
+      ],
+      "priority": 5,
+      "passes": true
+    },
+    {
+      "id": "GAB-206",
+      "title": "Dockerfile Backend Express",
+      "description": "Criar Dockerfile para o servidor Node.js",
+      "acceptanceCriteria": [
+        "Criar Dockerfile na raiz do projeto",
+        "Base: node:20-alpine",
+        "Multi-stage build (builder + runner)",
+        "Copiar apenas arquivos necessários (server/, shared/, package*.json)",
+        "npm ci --only=production",
+        "Expor porta 8080",
+        "CMD: npm run start",
+        "Criar .dockerignore"
+      ],
+      "priority": 6,
+      "passes": true
+    },
+    {
+      "id": "GAB-207",
+      "title": "fly.toml Backend Express",
+      "description": "Configurar Fly.io para o backend",
+      "acceptanceCriteria": [
+        "Criar fly.toml na raiz",
+        "App name: gabaritai-api",
+        "Region: gru (São Paulo)",
+        "Internal port: 8080",
+        "Health check: /api/health",
+        "Memory: 512MB",
+        "Auto-stop: true (economia)",
+        "Env vars via fly secrets"
+      ],
+      "priority": 7,
+      "passes": true
+    },
+    {
+      "id": "GAB-208",
+      "title": "Dockerfile Python OMR",
+      "description": "Criar Dockerfile para o serviço OMR",
+      "acceptanceCriteria": [
+        "Criar python_omr_service/Dockerfile",
+        "Base: python:3.11-slim",
+        "Instalar OpenCV dependencies (libgl1, libglib2.0-0)",
+        "COPY requirements.txt e pip install",
+        "COPY app.py e arquivos necessários",
+        "Expor porta 5002",
+        "CMD: gunicorn --bind 0.0.0.0:5002 app:app",
+        "Adicionar gunicorn ao requirements.txt"
+      ],
+      "priority": 8,
+      "passes": true
+    },
+    {
+      "id": "GAB-209",
+      "title": "fly.toml Python OMR",
+      "description": "Configurar Fly.io para o OMR service",
+      "acceptanceCriteria": [
+        "Criar python_omr_service/fly.toml",
+        "App name: gabaritai-omr",
+        "Region: gru (São Paulo)",
+        "Internal port: 5002",
+        "Health check: /health",
+        "Memory: 1GB (OpenCV precisa mais)",
+        "Auto-stop: true"
+      ],
+      "priority": 9,
+      "passes": true
+    },
+    {
+      "id": "GAB-210",
+      "title": "Dockerfile Python TRI",
+      "description": "Criar Dockerfile para o serviço TRI",
+      "acceptanceCriteria": [
+        "Criar python_tri_service/Dockerfile",
+        "Base: python:3.11-slim",
+        "COPY requirements.txt e pip install",
+        "COPY app.py, tri_v2_producao.py, tabela JSON",
+        "Expor porta 5003",
+        "CMD: gunicorn --bind 0.0.0.0:5003 app:app",
+        "Adicionar gunicorn ao requirements.txt"
+      ],
+      "priority": 10,
+      "passes": true
+    },
+    {
+      "id": "GAB-211",
+      "title": "fly.toml Python TRI",
+      "description": "Configurar Fly.io para o TRI service",
+      "acceptanceCriteria": [
+        "Criar python_tri_service/fly.toml",
+        "App name: gabaritai-tri",
+        "Region: gru (São Paulo)",
+        "Internal port: 5003",
+        "Health check: /health",
+        "Memory: 512MB",
+        "Auto-stop: true"
+      ],
+      "priority": 11,
+      "passes": true
+    },
+    {
+      "id": "GAB-212",
+      "title": "Script de Deploy",
+      "description": "Criar script automatizado de deploy",
+      "acceptanceCriteria": [
+        "Criar scripts/deploy.sh",
+        "Opção: deploy-all, deploy-frontend, deploy-backend, deploy-python",
+        "Verificar se fly CLI está instalado",
+        "Verificar se vercel CLI está instalado",
+        "Deploy frontend: vercel --prod",
+        "Deploy backend: fly deploy",
+        "Deploy OMR: cd python_omr_service && fly deploy",
+        "Deploy TRI: cd python_tri_service && fly deploy",
+        "Mensagens coloridas de status"
+      ],
+      "priority": 12,
+      "passes": true
+    },
+    {
+      "id": "GAB-213",
+      "title": "CORS e URLs de Produção",
+      "description": "Configurar CORS para aceitar domínios de produção",
+      "acceptanceCriteria": [
+        "Backend: adicionar domínio Vercel ao CORS",
+        "Backend: adicionar domínio customizado se houver",
+        "Python OMR: CORS já está com '*' (ok para internal)",
+        "Python TRI: CORS já está com '*' (ok para internal)",
+        "Variável FRONTEND_URL para CORS dinâmico"
+      ],
+      "priority": 13,
+      "passes": true
+    },
+    {
+      "id": "GAB-214",
+      "title": "Documentação DEPLOY.md",
+      "description": "Guia completo de deploy passo a passo",
+      "acceptanceCriteria": [
+        "Criar DEPLOY.md na raiz",
+        "Seção: Pré-requisitos (contas, CLIs)",
+        "Seção: Configurar Supabase",
+        "Seção: Deploy Frontend (Vercel)",
+        "Seção: Deploy Backend (Fly.io)",
+        "Seção: Deploy Python Services (Fly.io)",
+        "Seção: Configurar Secrets/Env Vars",
+        "Seção: Verificar Health Checks",
+        "Seção: Troubleshooting",
+        "Seção: Custos estimados"
+      ],
+      "priority": 14,
+      "passes": true
+    },
+    {
+      "id": "GAB-215",
+      "title": "Testar Fluxo Completo em Produção",
+      "description": "Checklist de testes pós-deploy",
+      "acceptanceCriteria": [
+        "Criar TESTING_CHECKLIST.md",
+        "[ ] Frontend carrega no Vercel",
+        "[ ] Login/Signup funciona",
+        "[ ] Upload PDF processa",
+        "[ ] OMR lê gabaritos",
+        "[ ] TRI calcula notas",
+        "[ ] Publicar para Alunos salva no Supabase",
+        "[ ] Aluno loga e vê dashboard",
+        "[ ] Admin importa CSV",
+        "[ ] Gráfico de evolução funciona"
+      ],
+      "priority": 15,
+      "passes": true
+    }
+  ],
+  "metadata": {
+    "totalStories": 15,
+    "completedStories": 15,
+    "estimatedTotalMinutes": 480,
+    "deploymentTargets": {
+      "frontend": "vercel.com",
+      "backend": "fly.io/xtri-gabaritos-api",
+      "omr": "fly.io/xtri-gabaritos-omr",
+      "tri": "fly.io/xtri-gabaritos-tri",
+      "database": "supabase.com"
+    }
+  }
+}

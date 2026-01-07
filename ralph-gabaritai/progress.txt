@@ -1,0 +1,49 @@
+# Ralph Progress - Gabaritai v3
+
+## Estado Atual: Fase Admin + Alunos
+
+### ✅ Completo (Fases 1-5)
+- Supabase client configurado
+- Tipos TypeScript criados
+- AuthContext + useAuth funcionando
+- Login/Signup implementados
+- ProtectedRoute funcionando
+- App.tsx com rotas
+- Schema SQL rodado no Supabase
+- Autenticação testada e funcionando
+
+### 🎯 Pendente (10 tasks)
+- GAB-101: Admin Layout
+- GAB-102: CSV Uploader
+- GAB-103: API Import Students
+- GAB-104: Integrar Upload
+- GAB-105: Lista de Alunos
+- GAB-106: Vincular por Matrícula
+- GAB-107: Dashboard Resultados
+- GAB-108: Dashboard Histórico
+- GAB-109: Gráfico Evolução
+- GAB-110: Login por Matrícula
+
+---
+
+## Arquivos Principais
+
+| Arquivo | Status |
+|---------|--------|
+| client/src/lib/supabase.ts | ✅ |
+| server/lib/supabase.ts | ✅ |
+| shared/database.types.ts | ✅ |
+| client/src/contexts/AuthContext.tsx | ✅ |
+| client/src/pages/login.tsx | ✅ |
+| client/src/pages/signup.tsx | ✅ |
+| client/src/components/ProtectedRoute.tsx | ✅ |
+| client/src/pages/student-dashboard.tsx | ✅ (placeholder) |
+| client/src/App.tsx | ✅ |
+
+---
+
+## Progress Entries
+
+(Ralph adiciona abaixo)
+
+---

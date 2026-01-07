@@ -16,6 +16,14 @@ import { extractHeaderInfoWithGPT } from "./chatgptOMR.js";
 import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
 import { storage } from "./storage.js";
+import { supabaseAdmin } from "./lib/supabase.js";
+import {
+  transformStudentsForSupabase,
+  transformStudentFromSupabase,
+  calculateBlankAnswers,
+  type StudentDataFrontend,
+  type StudentAnswerSupabase
+} from "@shared/transforms";
 
 // Configuração dos serviços Python
 const PYTHON_OMR_SERVICE_URL = process.env.PYTHON_OMR_URL || "http://localhost:5002";
@@ -283,16 +291,12 @@ function convertPythonOMRToInternal(
     warnings: warnings.slice(0, 10), // Limitar warnings
   };
 }
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { join } from "path";
 // Módulos organizados
 import { TRICalculator } from "./src/calculations/triCalculator.js";
 import { TCTCalculator } from "./src/calculations/tctCalculator.js";
 import { TRIProcessor } from "./src/processors/triProcessor.js";
 import { QuestionStatsProcessor } from "./src/processors/questionStatsProcessor.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Job storage for async PDF processing
 interface ProcessingJob {
@@ -2864,42 +2868,125 @@ Para cada disciplina:
   }
 
   // POST /api/avaliacoes - Salvar avaliação
+  // GAB-201: POST /api/avaliacoes - Salvar avaliação no Supabase
   app.post("/api/avaliacoes", async (req: Request, res: Response) => {
     try {
-      await ensureAvaliacoesFile();
-      
-      const avaliacao = req.body;
-      
+      const {
+        titulo,
+        templateType = "ENEM",
+        totalQuestoes = 90,
+        gabarito,
+        questionContents,
+        alunos: alunosOriginal,
+        students: studentsOriginal, // GAB-203: Aceitar "students" do frontend
+        school_id,
+        schoolId, // GAB-203: Aceitar camelCase também
+        created_by
+      } = req.body;
+
+      // GAB-203: Aceitar tanto "alunos" quanto "students", e school_id ou schoolId
+      const alunos = alunosOriginal || studentsOriginal;
+
       // Validar dados obrigatórios
-      if (!avaliacao.id || !avaliacao.data || !avaliacao.titulo) {
-        res.status(400).json({ error: "Dados obrigatórios faltando: id, data, titulo" });
-        return;
+      // GAB-203: Aceitar school_id ou schoolId
+      const finalSchoolId = school_id || schoolId;
+
+      if (!titulo) {
+        return res.status(400).json({ error: "Título é obrigatório" });
+      }
+      if (!finalSchoolId) {
+        return res.status(400).json({ error: "school_id é obrigatório" });
+      }
+      if (!alunos || !Array.isArray(alunos) || alunos.length === 0) {
+        return res.status(400).json({ error: "Lista de alunos é obrigatória" });
       }
 
-      // Ler avaliações existentes
-      const content = await fs.readFile(AVALIACOES_FILE, "utf-8");
-      const avaliacoes: any[] = JSON.parse(content);
+      console.log(`[AVALIACOES] Criando avaliação: ${titulo} com ${alunos.length} alunos`);
 
-      // Verificar se já existe (atualizar) ou adicionar nova
-      const index = avaliacoes.findIndex(a => a.id === avaliacao.id);
-      if (index >= 0) {
-        avaliacoes[index] = avaliacao;
-      } else {
-        avaliacoes.unshift(avaliacao); // Adicionar no início
+      // 1. Criar o exam no Supabase
+      const { data: exam, error: examError } = await supabaseAdmin
+        .from("exams")
+        .insert({
+          school_id: finalSchoolId,
+          created_by: created_by || null,
+          title: titulo,
+          template_type: templateType,
+          total_questions: totalQuestoes,
+          answer_key: gabarito || null,
+          question_contents: questionContents || null,
+          status: "active"
+        })
+        .select()
+        .single();
+
+      if (examError) {
+        console.error("[AVALIACOES] Erro ao criar exam:", examError);
+        return res.status(500).json({
+          error: "Erro ao criar avaliação",
+          details: examError.message
+        });
       }
 
-      // Manter apenas as últimas 100 avaliações
-      const avaliacoesLimitadas = avaliacoes.slice(0, 100);
+      console.log(`[AVALIACOES] Exam criado: ${exam.id}`);
 
-      // Salvar no arquivo
-      await fs.writeFile(AVALIACOES_FILE, JSON.stringify(avaliacoesLimitadas, null, 2), "utf-8");
+      // 2. GAB-203: Usar função transformStudentsForSupabase para converter dados
+      const transformedStudents = transformStudentsForSupabase(
+        alunos as StudentDataFrontend[],
+        exam.id,
+        finalSchoolId,
+        totalQuestoes
+      );
 
-      console.log(`[AVALIACOES] Salva: ${avaliacao.id} - ${avaliacao.totalAlunos} alunos`);
-      
+      // 3. Buscar student_ids em batch para vincular alunos cadastrados
+      const studentNumbers = transformedStudents
+        .map(s => s.student_number)
+        .filter((sn): sn is string => sn !== null);
+
+      const profileMap = new Map<string, string>();
+
+      if (studentNumbers.length > 0) {
+        const { data: profiles } = await supabaseAdmin
+          .from("profiles")
+          .select("id, student_number")
+          .in("student_number", studentNumbers);
+
+        profiles?.forEach(p => {
+          if (p.student_number) {
+            profileMap.set(p.student_number, p.id);
+          }
+        });
+      }
+
+      // 4. Adicionar student_id aos registros transformados
+      const studentAnswersToInsert = transformedStudents.map(student => ({
+        ...student,
+        student_id: student.student_number ? (profileMap.get(student.student_number) || null) : null
+      }));
+
+      // Inserir em batch
+      const { data: insertedAnswers, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .insert(studentAnswersToInsert)
+        .select();
+
+      if (answersError) {
+        console.error("[AVALIACOES] Erro ao inserir respostas:", answersError);
+        // Deletar o exam criado para manter consistência
+        await supabaseAdmin.from("exams").delete().eq("id", exam.id);
+        return res.status(500).json({
+          error: "Erro ao salvar respostas dos alunos",
+          details: answersError.message
+        });
+      }
+
+      console.log(`[AVALIACOES] ${insertedAnswers?.length || 0} respostas salvas para exam ${exam.id}`);
+
       res.json({
         success: true,
-        id: avaliacao.id,
-        total: avaliacoesLimitadas.length
+        id: exam.id,
+        examId: exam.id,
+        totalAlunos: insertedAnswers?.length || 0,
+        message: `Avaliação "${titulo}" publicada com sucesso!`
       });
     } catch (error: any) {
       console.error("[AVALIACOES] Erro ao salvar:", error);
@@ -2910,13 +2997,64 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/avaliacoes - Listar todas as avaliações
+  // GAB-201: GET /api/avaliacoes - Listar avaliações do Supabase
   app.get("/api/avaliacoes", async (req: Request, res: Response) => {
     try {
-      await ensureAvaliacoesFile();
-      
-      const content = await fs.readFile(AVALIACOES_FILE, "utf-8");
-      const avaliacoes = JSON.parse(content);
+      const { school_id } = req.query;
+
+      // Buscar exams do Supabase
+      let query = supabaseAdmin
+        .from("exams")
+        .select(`
+          id,
+          title,
+          template_type,
+          total_questions,
+          status,
+          created_at,
+          created_by,
+          school_id,
+          answer_key
+        `)
+        .order("created_at", { ascending: false });
+
+      // Filtrar por school_id se fornecido
+      if (school_id) {
+        query = query.eq("school_id", school_id);
+      }
+
+      const { data: exams, error: examsError } = await query;
+
+      if (examsError) {
+        console.error("[AVALIACOES] Erro ao listar:", examsError);
+        return res.status(500).json({
+          error: "Erro ao listar avaliações",
+          details: examsError.message
+        });
+      }
+
+      // Para cada exam, contar os alunos (student_answers)
+      const avaliacoes = await Promise.all(
+        (exams || []).map(async (exam) => {
+          const { count } = await supabaseAdmin
+            .from("student_answers")
+            .select("*", { count: "exact", head: true })
+            .eq("exam_id", exam.id);
+
+          return {
+            id: exam.id,
+            titulo: exam.title,
+            templateType: exam.template_type,
+            totalQuestoes: exam.total_questions,
+            totalAlunos: count || 0,
+            status: exam.status,
+            data: exam.created_at,
+            createdAt: exam.created_at,
+            schoolId: exam.school_id,
+            gabarito: exam.answer_key
+          };
+        })
+      );
 
       res.json({
         success: true,
@@ -2932,21 +3070,52 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/avaliacoes/:id - Buscar avaliação específica
+  // GAB-201: GET /api/avaliacoes/:id - Buscar avaliação específica do Supabase
   app.get("/api/avaliacoes/:id", async (req: Request, res: Response) => {
     try {
-      await ensureAvaliacoesFile();
-      
       const { id } = req.params;
-      const content = await fs.readFile(AVALIACOES_FILE, "utf-8");
-      const avaliacoes: any[] = JSON.parse(content);
-      
-      const avaliacao = avaliacoes.find(a => a.id === id);
-      
-      if (!avaliacao) {
-        res.status(404).json({ error: "Avaliação não encontrada" });
-        return;
+
+      // Buscar exam
+      const { data: exam, error: examError } = await supabaseAdmin
+        .from("exams")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (examError || !exam) {
+        return res.status(404).json({ error: "Avaliação não encontrada" });
       }
+
+      // Buscar student_answers relacionados
+      const { data: studentAnswers, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .select("*")
+        .eq("exam_id", id)
+        .order("student_name", { ascending: true });
+
+      if (answersError) {
+        console.error("[AVALIACOES] Erro ao buscar respostas:", answersError);
+      }
+
+      // GAB-203: Usar função transformStudentFromSupabase para converter dados
+      const alunos = (studentAnswers || []).map((sa) =>
+        transformStudentFromSupabase(sa as StudentAnswerSupabase)
+      );
+
+      const avaliacao = {
+        id: exam.id,
+        titulo: exam.title,
+        templateType: exam.template_type,
+        totalQuestoes: exam.total_questions,
+        totalAlunos: alunos.length,
+        status: exam.status,
+        data: exam.created_at,
+        createdAt: exam.created_at,
+        schoolId: exam.school_id,
+        gabarito: exam.answer_key,
+        questionContents: exam.question_contents,
+        alunos
+      };
 
       res.json({
         success: true,
@@ -2961,23 +3130,51 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/avaliacoes/:id - Deletar avaliação
+  // GAB-201: DELETE /api/avaliacoes/:id - Deletar avaliação do Supabase
   app.delete("/api/avaliacoes/:id", async (req: Request, res: Response) => {
     try {
-      await ensureAvaliacoesFile();
-      
       const { id } = req.params;
-      const content = await fs.readFile(AVALIACOES_FILE, "utf-8");
-      const avaliacoes: any[] = JSON.parse(content);
-      
-      const index = avaliacoes.findIndex(a => a.id === id);
-      if (index < 0) {
-        res.status(404).json({ error: "Avaliação não encontrada" });
-        return;
+
+      // Verificar se exam existe
+      const { data: exam, error: checkError } = await supabaseAdmin
+        .from("exams")
+        .select("id, title")
+        .eq("id", id)
+        .single();
+
+      if (checkError || !exam) {
+        return res.status(404).json({ error: "Avaliação não encontrada" });
       }
 
-      avaliacoes.splice(index, 1);
-      await fs.writeFile(AVALIACOES_FILE, JSON.stringify(avaliacoes, null, 2), "utf-8");
+      // 1. Deletar student_answers relacionados primeiro (foreign key)
+      const { error: answersDeleteError } = await supabaseAdmin
+        .from("student_answers")
+        .delete()
+        .eq("exam_id", id);
+
+      if (answersDeleteError) {
+        console.error("[AVALIACOES] Erro ao deletar respostas:", answersDeleteError);
+        return res.status(500).json({
+          error: "Erro ao deletar respostas dos alunos",
+          details: answersDeleteError.message
+        });
+      }
+
+      // 2. Deletar o exam
+      const { error: examDeleteError } = await supabaseAdmin
+        .from("exams")
+        .delete()
+        .eq("id", id);
+
+      if (examDeleteError) {
+        console.error("[AVALIACOES] Erro ao deletar exam:", examDeleteError);
+        return res.status(500).json({
+          error: "Erro ao deletar avaliação",
+          details: examDeleteError.message
+        });
+      }
+
+      console.log(`[AVALIACOES] Avaliação deletada: ${id} - ${exam.title}`);
 
       res.json({
         success: true,
@@ -3585,6 +3782,770 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao listar por usuário:", error);
       res.status(500).json({
         error: "Erro ao listar configurações",
+        details: error.message
+      });
+    }
+  });
+
+  // =====================================================
+  // ADMIN - Importar Alunos (GAB-103)
+  // =====================================================
+
+  interface ImportStudentInput {
+    matricula: string;
+    nome: string;
+    turma: string;
+    email?: string;
+  }
+
+  interface ImportStudentResult {
+    matricula: string;
+    nome: string;
+    turma: string;
+    email: string;
+    senha: string;
+    status: 'created' | 'updated' | 'error';
+    message?: string;
+  }
+
+  /**
+   * Gera senha automática: matrícula + 4 dígitos aleatórios
+   */
+  function generatePassword(matricula: string): string {
+    const randomDigits = Math.floor(1000 + Math.random() * 9000);
+    return `${matricula}${randomDigits}`;
+  }
+
+  /**
+   * Gera email baseado na matrícula se não fornecido
+   */
+  function generateEmail(matricula: string, schoolSlug: string = 'escola'): string {
+    return `${matricula}@${schoolSlug}.gabaritai.com`;
+  }
+
+  // POST /api/admin/import-students - Importar alunos em lote
+  app.post("/api/admin/import-students", async (req: Request, res: Response) => {
+    try {
+      const { students, schoolId } = req.body as {
+        students: ImportStudentInput[];
+        schoolId?: string;
+      };
+
+      if (!students || !Array.isArray(students) || students.length === 0) {
+        res.status(400).json({
+          error: "Lista de alunos é obrigatória",
+          details: "Envie um array de objetos com matricula, nome, turma e email (opcional)"
+        });
+        return;
+      }
+
+      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s)...`);
+
+      const results: ImportStudentResult[] = [];
+      let created = 0;
+      let updated = 0;
+      let errors = 0;
+
+      for (const student of students) {
+        const { matricula, nome, turma, email: providedEmail } = student;
+
+        // Validação básica
+        if (!matricula || !nome || !turma) {
+          results.push({
+            matricula: matricula || 'N/A',
+            nome: nome || 'N/A',
+            turma: turma || 'N/A',
+            email: providedEmail || 'N/A',
+            senha: '',
+            status: 'error',
+            message: 'Campos obrigatórios faltando (matricula, nome, turma)'
+          });
+          errors++;
+          continue;
+        }
+
+        // Gerar email se não fornecido
+        const email = providedEmail || generateEmail(matricula);
+        const senha = generatePassword(matricula);
+
+        try {
+          // Verificar se já existe um profile com essa matrícula
+          const { data: existingProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id, email')
+            .eq('student_number', matricula)
+            .maybeSingle();
+
+          if (existingProfile) {
+            // Atualizar profile existente
+            const { error: updateError } = await supabaseAdmin
+              .from('profiles')
+              .update({
+                name: nome,
+                turma: turma,
+                school_id: schoolId || null
+              })
+              .eq('id', existingProfile.id);
+
+            if (updateError) {
+              throw new Error(`Erro ao atualizar profile: ${updateError.message}`);
+            }
+
+            results.push({
+              matricula,
+              nome,
+              turma,
+              email: existingProfile.email,
+              senha: '(senha mantida)',
+              status: 'updated',
+              message: 'Dados atualizados (senha não alterada)'
+            });
+            updated++;
+            console.log(`[IMPORT] Aluno ${matricula} atualizado`);
+          } else {
+            // Verificar se já existe usuário com esse email
+            const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
+            const existingUser = existingUsers?.users?.find(u => u.email === email);
+
+            let userId: string;
+
+            if (existingUser) {
+              // Usar usuário existente
+              userId = existingUser.id;
+              console.log(`[IMPORT] Usuário ${email} já existe, usando ID existente`);
+            } else {
+              // Criar novo usuário no Supabase Auth
+              const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email,
+                password: senha,
+                email_confirm: true, // Confirmar email automaticamente
+                user_metadata: {
+                  name: nome,
+                  role: 'student',
+                  student_number: matricula,
+                  turma: turma
+                }
+              });
+
+              if (authError) {
+                throw new Error(`Erro ao criar usuário: ${authError.message}`);
+              }
+
+              userId = authData.user.id;
+              console.log(`[IMPORT] Usuário criado: ${email}`);
+            }
+
+            // Criar profile
+            const { error: profileError } = await supabaseAdmin
+              .from('profiles')
+              .upsert({
+                id: userId,
+                email,
+                name: nome,
+                role: 'student',
+                student_number: matricula,
+                turma: turma,
+                school_id: schoolId || null
+              }, {
+                onConflict: 'id'
+              });
+
+            if (profileError) {
+              throw new Error(`Erro ao criar profile: ${profileError.message}`);
+            }
+
+            results.push({
+              matricula,
+              nome,
+              turma,
+              email,
+              senha: existingUser ? '(usuário já existia)' : senha,
+              status: 'created',
+              message: existingUser ? 'Profile criado para usuário existente' : 'Aluno criado com sucesso'
+            });
+            created++;
+            console.log(`[IMPORT] Profile criado para ${matricula}`);
+          }
+        } catch (error: any) {
+          console.error(`[IMPORT] Erro ao processar ${matricula}:`, error.message);
+          results.push({
+            matricula,
+            nome,
+            turma,
+            email,
+            senha: '',
+            status: 'error',
+            message: error.message
+          });
+          errors++;
+        }
+      }
+
+      console.log(`[IMPORT] Concluído: ${created} criados, ${updated} atualizados, ${errors} erros`);
+
+      res.json({
+        success: errors === 0,
+        summary: {
+          total: students.length,
+          created,
+          updated,
+          errors
+        },
+        results
+      });
+    } catch (error: any) {
+      console.error("[IMPORT] Erro geral:", error);
+      res.status(500).json({
+        error: "Erro ao importar alunos",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/admin/students - Listar alunos com filtros
+  app.get("/api/admin/students", async (req: Request, res: Response) => {
+    try {
+      const { turma, search, page = '1', limit = '50' } = req.query;
+
+      let query = supabaseAdmin
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .eq('role', 'student')
+        .order('name', { ascending: true });
+
+      // Filtro por turma
+      if (turma && typeof turma === 'string') {
+        query = query.eq('turma', turma);
+      }
+
+      // Busca por nome ou matrícula
+      if (search && typeof search === 'string') {
+        query = query.or(`name.ilike.%${search}%,student_number.ilike.%${search}%`);
+      }
+
+      // Paginação
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+      const offset = (pageNum - 1) * limitNum;
+
+      query = query.range(offset, offset + limitNum - 1);
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        throw new Error(`Erro ao buscar alunos: ${error.message}`);
+      }
+
+      // Buscar lista de turmas únicas para o filtro
+      const { data: turmasData } = await supabaseAdmin
+        .from('profiles')
+        .select('turma')
+        .eq('role', 'student')
+        .not('turma', 'is', null);
+
+      const turmas = [...new Set(turmasData?.map(t => t.turma).filter(Boolean))].sort();
+
+      res.json({
+        success: true,
+        students: data || [],
+        pagination: {
+          total: count || 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil((count || 0) / limitNum)
+        },
+        turmas
+      });
+    } catch (error: any) {
+      console.error("[STUDENTS] Erro ao listar:", error);
+      res.status(500).json({
+        error: "Erro ao listar alunos",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/reset-password - Resetar senha do aluno
+  app.post("/api/admin/reset-password", async (req: Request, res: Response) => {
+    try {
+      const { studentId, matricula } = req.body;
+
+      if (!studentId) {
+        res.status(400).json({ error: "ID do aluno é obrigatório" });
+        return;
+      }
+
+      // Gerar nova senha
+      const novaSenha = `${matricula || 'aluno'}${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Atualizar senha no Supabase Auth
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        studentId,
+        { password: novaSenha }
+      );
+
+      if (authError) {
+        throw new Error(`Erro ao resetar senha: ${authError.message}`);
+      }
+
+      console.log(`[RESET-PWD] Senha resetada para aluno ${studentId}`);
+
+      res.json({
+        success: true,
+        novaSenha,
+        message: "Senha resetada com sucesso"
+      });
+    } catch (error: any) {
+      console.error("[RESET-PWD] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao resetar senha",
+        details: error.message
+      });
+    }
+  });
+
+  // DELETE /api/admin/students/:id - Remover aluno
+  app.delete("/api/admin/students/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Buscar dados do aluno antes de deletar
+      const { data: student } = await supabaseAdmin
+        .from('profiles')
+        .select('name, student_number')
+        .eq('id', id)
+        .single();
+
+      if (!student) {
+        res.status(404).json({ error: "Aluno não encontrado" });
+        return;
+      }
+
+      // Deletar profile
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+
+      if (profileError) {
+        throw new Error(`Erro ao deletar profile: ${profileError.message}`);
+      }
+
+      // Deletar usuário do Auth
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+
+      if (authError) {
+        console.warn(`[DELETE] Profile deletado mas erro ao deletar auth user: ${authError.message}`);
+      }
+
+      console.log(`[DELETE] Aluno ${student.name} (${student.student_number}) removido`);
+
+      res.json({
+        success: true,
+        message: `Aluno ${student.name} removido com sucesso`
+      });
+    } catch (error: any) {
+      console.error("[DELETE] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao remover aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // ============================================================================
+  // GAB-106: SALVAR RESPOSTAS DOS ALUNOS (com vinculação por matrícula)
+  // ============================================================================
+
+  // POST /api/student-answers - Salvar respostas de um aluno
+  app.post("/api/student-answers", async (req: Request, res: Response) => {
+    try {
+      const {
+        exam_id,
+        school_id,
+        student_name,
+        student_number,
+        turma,
+        answers,
+        score,
+        correct_answers,
+        wrong_answers,
+        blank_answers,
+        tri_theta,
+        tri_score,
+        tri_lc,
+        tri_ch,
+        tri_cn,
+        tri_mt,
+        confidence
+      } = req.body;
+
+      // Validações obrigatórias
+      if (!exam_id || !school_id || !student_name || !answers) {
+        return res.status(400).json({
+          error: "Dados obrigatórios faltando",
+          required: ["exam_id", "school_id", "student_name", "answers"]
+        });
+      }
+
+      console.log(`[STUDENT_ANSWERS] Salvando resultado para: ${student_name} (${student_number || 'sem matrícula'})`);
+
+      // GAB-106: Buscar student_id pelo student_number se fornecido
+      let student_id: string | null = null;
+
+      if (student_number) {
+        // Busca por student_number (não filtra por school_id porque profiles podem ter school_id null)
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from("profiles")
+          .select("id, name, school_id")
+          .eq("student_number", student_number)
+          .single();
+
+        if (profileError) {
+          console.log(`[STUDENT_ANSWERS] Erro ao buscar perfil: ${profileError.message}`);
+        }
+
+        if (profile) {
+          student_id = profile.id;
+          console.log(`[STUDENT_ANSWERS] Aluno encontrado no profiles: ${student_id} (${profile.name})`);
+        } else {
+          console.log(`[STUDENT_ANSWERS] Aluno não cadastrado: ${student_number} - salvando sem vinculação`);
+        }
+      }
+
+      // Upsert - atualiza se existir (mesmo exam_id + student_number)
+      const { data, error } = await supabaseAdmin
+        .from("student_answers")
+        .upsert({
+          exam_id,
+          student_id,
+          school_id,
+          student_name,
+          student_number,
+          turma,
+          answers,
+          score,
+          correct_answers,
+          wrong_answers,
+          blank_answers,
+          tri_theta,
+          tri_score,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          confidence
+        }, {
+          onConflict: "exam_id,student_number"
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[STUDENT_ANSWERS] Erro ao salvar:", error);
+        return res.status(500).json({
+          error: "Erro ao salvar resposta",
+          details: error.message
+        });
+      }
+
+      res.json({
+        success: true,
+        message: student_id ? "Resultado salvo e vinculado ao aluno" : "Resultado salvo (aluno não cadastrado)",
+        data,
+        linked: !!student_id
+      });
+
+    } catch (error: any) {
+      console.error("[STUDENT_ANSWERS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao salvar resposta do aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/student-answers/batch - Salvar respostas de múltiplos alunos
+  app.post("/api/student-answers/batch", async (req: Request, res: Response) => {
+    try {
+      const { exam_id, school_id, students } = req.body;
+
+      if (!exam_id || !school_id || !students || !Array.isArray(students)) {
+        return res.status(400).json({
+          error: "Dados obrigatórios faltando",
+          required: ["exam_id", "school_id", "students (array)"]
+        });
+      }
+
+      console.log(`[STUDENT_ANSWERS_BATCH] Salvando ${students.length} resultados`);
+
+      // Buscar todos os profiles de uma vez para otimizar (não filtra por school_id porque profiles podem ter school_id null)
+      const { data: profiles, error: profilesError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, student_number")
+        .eq("role", "student");
+
+      if (profilesError) {
+        console.log(`[STUDENT_ANSWERS_BATCH] Erro ao buscar profiles: ${profilesError.message}`);
+      }
+
+      // Criar mapa de student_number -> id para lookup rápido
+      const profileMap = new Map<string, string>();
+      profiles?.forEach(p => {
+        if (p.student_number) {
+          profileMap.set(p.student_number, p.id);
+        }
+      });
+
+      console.log(`[STUDENT_ANSWERS_BATCH] ${profileMap.size} alunos cadastrados`);
+
+      // Preparar dados com student_id vinculado
+      const answersToInsert = students.map(s => ({
+        exam_id,
+        school_id,
+        student_id: s.student_number ? (profileMap.get(s.student_number) || null) : null,
+        student_name: s.student_name,
+        student_number: s.student_number,
+        turma: s.turma,
+        answers: s.answers,
+        score: s.score,
+        correct_answers: s.correct_answers,
+        wrong_answers: s.wrong_answers,
+        blank_answers: s.blank_answers,
+        tri_theta: s.tri_theta,
+        tri_score: s.tri_score,
+        tri_lc: s.tri_lc,
+        tri_ch: s.tri_ch,
+        tri_cn: s.tri_cn,
+        tri_mt: s.tri_mt,
+        confidence: s.confidence
+      }));
+
+      // Contar vinculações
+      const linkedCount = answersToInsert.filter(a => a.student_id).length;
+
+      // Upsert em batch
+      const { data, error } = await supabaseAdmin
+        .from("student_answers")
+        .upsert(answersToInsert, {
+          onConflict: "exam_id,student_number"
+        })
+        .select();
+
+      if (error) {
+        console.error("[STUDENT_ANSWERS_BATCH] Erro:", error);
+        return res.status(500).json({
+          error: "Erro ao salvar respostas em lote",
+          details: error.message
+        });
+      }
+
+      console.log(`[STUDENT_ANSWERS_BATCH] Salvos ${data?.length} resultados, ${linkedCount} vinculados`);
+
+      res.json({
+        success: true,
+        message: `${data?.length || 0} resultados salvos, ${linkedCount} vinculados a alunos cadastrados`,
+        total: data?.length || 0,
+        linked: linkedCount,
+        unlinked: (data?.length || 0) - linkedCount
+      });
+
+    } catch (error: any) {
+      console.error("[STUDENT_ANSWERS_BATCH] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao salvar respostas em lote",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/student-answers/:studentId - Buscar resultados de um aluno
+  app.get("/api/student-answers/:studentId", async (req: Request, res: Response) => {
+    try {
+      const { studentId } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from("student_answers")
+        .select(`
+          *,
+          exams (id, title, template_type, created_at)
+        `)
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("[STUDENT_ANSWERS] Erro ao buscar:", error);
+        return res.status(500).json({
+          error: "Erro ao buscar resultados",
+          details: error.message
+        });
+      }
+
+      res.json({
+        success: true,
+        results: data || [],
+        total: data?.length || 0
+      });
+
+    } catch (error: any) {
+      console.error("[STUDENT_ANSWERS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar resultados do aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/exams - Criar uma prova
+  app.post("/api/exams", async (req: Request, res: Response) => {
+    try {
+      const { school_id, title, template_type, total_questions, answer_key } = req.body;
+
+      if (!school_id || !title) {
+        return res.status(400).json({
+          error: "Dados obrigatórios faltando",
+          required: ["school_id", "title"]
+        });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("exams")
+        .insert({
+          school_id,
+          title,
+          template_type: template_type || "ENEM",
+          total_questions: total_questions || 45,
+          answer_key: answer_key || null
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[EXAMS] Erro ao criar:", error);
+        return res.status(500).json({
+          error: "Erro ao criar prova",
+          details: error.message
+        });
+      }
+
+      res.json({
+        success: true,
+        exam: data
+      });
+
+    } catch (error: any) {
+      console.error("[EXAMS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao criar prova",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/exams - Listar provas
+  app.get("/api/exams", async (req: Request, res: Response) => {
+    try {
+      const { school_id } = req.query;
+
+      let query = supabaseAdmin.from("exams").select("*");
+
+      if (school_id) {
+        query = query.eq("school_id", school_id as string);
+      }
+
+      const { data, error } = await query.order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("[EXAMS] Erro ao listar:", error);
+        return res.status(500).json({
+          error: "Erro ao listar provas",
+          details: error.message
+        });
+      }
+
+      res.json({
+        success: true,
+        exams: data || []
+      });
+
+    } catch (error: any) {
+      console.error("[EXAMS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao listar provas",
+        details: error.message
+      });
+    }
+  });
+
+  // GAB-110: GET /api/auth/email-by-matricula/:matricula - Buscar email pelo número de matrícula
+  app.get("/api/auth/email-by-matricula/:matricula", async (req: Request, res: Response) => {
+    try {
+      const { matricula } = req.params;
+
+      if (!matricula || matricula.trim() === '') {
+        return res.status(400).json({
+          error: "Matrícula não fornecida"
+        });
+      }
+
+      console.log(`[AUTH] Buscando email para matrícula: ${matricula}`);
+
+      const { data: profile, error } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, student_number")
+        .eq("student_number", matricula.trim())
+        .single();
+
+      if (error || !profile) {
+        console.log(`[AUTH] Matrícula não encontrada: ${matricula}`);
+        return res.status(404).json({
+          error: "Matrícula não encontrada",
+          message: "Não existe nenhum aluno cadastrado com essa matrícula."
+        });
+      }
+
+      console.log(`[AUTH] Matrícula ${matricula} encontrada: ${profile.email}`);
+
+      res.json({
+        success: true,
+        email: profile.email,
+        name: profile.name
+      });
+
+    } catch (error: any) {
+      console.error("[AUTH] Erro ao buscar email por matrícula:", error);
+      res.status(500).json({
+        error: "Erro ao buscar matrícula",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/profile/:userId - Buscar profile de um usuário (bypass RLS)
+  app.get("/api/profile/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (error) {
+        console.error("[PROFILE] Erro ao buscar:", error);
+        return res.status(404).json({
+          error: "Profile não encontrado",
+          details: error.message
+        });
+      }
+
+      res.json(data);
+
+    } catch (error: any) {
+      console.error("[PROFILE] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar profile",
         details: error.message
       });
     }

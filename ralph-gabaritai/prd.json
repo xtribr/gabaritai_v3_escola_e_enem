@@ -1,0 +1,168 @@
+{
+  "projectName": "Gabaritai v3 - Admin + Alunos",
+  "description": "Sistema de gestão escolar com upload de alunos via CSV e dashboard individual",
+  "branchName": "feature/admin-alunos",
+  "createdAt": "2026-01-06",
+  "completedPhases": [
+    "Setup Supabase",
+    "Tipos TypeScript", 
+    "AuthContext",
+    "Login/Signup",
+    "ProtectedRoute",
+    "App.tsx com rotas"
+  ],
+  "userStories": [
+    {
+      "id": "GAB-101",
+      "title": "Página Admin - Layout Base",
+      "description": "Criar página de administração da escola",
+      "acceptanceCriteria": [
+        "Criar client/src/pages/admin.tsx",
+        "Header com nome da escola e logout",
+        "Tabs: Alunos, Turmas, Configurações",
+        "Rota /admin protegida para role admin/teacher",
+        "Adicionar rota no App.tsx",
+        "Link no Home.tsx para acessar Admin"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "GAB-102",
+      "title": "Componente Upload CSV",
+      "description": "Componente para upload e preview de CSV de alunos",
+      "acceptanceCriteria": [
+        "Criar client/src/components/CsvUploader.tsx",
+        "Dropzone para arrastar arquivo CSV",
+        "Parse do CSV com papaparse ou manual",
+        "Preview em tabela antes de confirmar",
+        "Validação: colunas obrigatórias (matricula, nome, turma)",
+        "Mostrar erros de validação por linha"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "GAB-103",
+      "title": "API Importar Alunos",
+      "description": "Endpoint para importar alunos em lote",
+      "acceptanceCriteria": [
+        "POST /api/admin/import-students",
+        "Recebe array de {matricula, nome, turma, email?}",
+        "Gera senha automática (matricula + 4 dígitos)",
+        "Cria usuários no Supabase Auth",
+        "Cria profiles com role=student",
+        "Retorna lista com senhas geradas",
+        "Tratamento de duplicados (atualiza se existe)"
+      ],
+      "priority": 3,
+      "passes": true
+    },
+    {
+      "id": "GAB-104",
+      "title": "Integrar Upload na Admin",
+      "description": "Conectar componente CSV com API",
+      "acceptanceCriteria": [
+        "Tab Alunos na página Admin",
+        "Usar CsvUploader component",
+        "Botão 'Importar' chama API",
+        "Loading state durante importação",
+        "Modal de sucesso com senhas geradas",
+        "Opção de baixar PDF/CSV com credenciais"
+      ],
+      "priority": 4,
+      "passes": true
+    },
+    {
+      "id": "GAB-105",
+      "title": "Lista de Alunos",
+      "description": "Exibir alunos cadastrados com filtros",
+      "acceptanceCriteria": [
+        "Tabela com: Matrícula, Nome, Turma, Email, Ações",
+        "Filtro por turma (select)",
+        "Busca por nome/matrícula",
+        "Botão resetar senha",
+        "Botão remover aluno",
+        "Paginação se necessário"
+      ],
+      "priority": 5,
+      "passes": true
+    },
+    {
+      "id": "GAB-106",
+      "title": "Vincular Resultados por Matrícula",
+      "description": "Garantir que resultados são vinculados pela matrícula",
+      "acceptanceCriteria": [
+        "Ao processar gabarito, buscar aluno por student_number",
+        "Se aluno existe no profiles, vincular student_id",
+        "Se não existe, manter apenas student_number",
+        "Atualizar saveStudentAnswers para fazer o match",
+        "Histórico do aluno acumula por matrícula"
+      ],
+      "priority": 6,
+      "passes": true
+    },
+    {
+      "id": "GAB-107",
+      "title": "Dashboard Aluno - Resultados",
+      "description": "Expandir dashboard do aluno com resultados reais",
+      "acceptanceCriteria": [
+        "Buscar student_answers do aluno logado",
+        "Card com último resultado (TRI geral)",
+        "Cards com TRI por área (LC, CH, CN, MT)",
+        "Card com acertos/erros/brancos",
+        "Loading states apropriados"
+      ],
+      "priority": 7,
+      "passes": true
+    },
+    {
+      "id": "GAB-108",
+      "title": "Dashboard Aluno - Histórico",
+      "description": "Lista de todas as provas do aluno",
+      "acceptanceCriteria": [
+        "Tabela: Data, Prova, Nota, TRI, Ver",
+        "Ordenado por data desc",
+        "Dialog com detalhes ao clicar",
+        "Mostrar evolução simples",
+        "Empty state se sem provas"
+      ],
+      "priority": 8,
+      "passes": true
+    },
+    {
+      "id": "GAB-109",
+      "title": "Dashboard Aluno - Gráfico Evolução",
+      "description": "Gráfico de linha mostrando evolução do TRI",
+      "acceptanceCriteria": [
+        "LineChart com Recharts",
+        "Eixo X: datas",
+        "Eixo Y: TRI score",
+        "Tooltip com detalhes",
+        "Responsivo",
+        "Esconder se menos de 2 provas"
+      ],
+      "priority": 9,
+      "passes": true
+    },
+    {
+      "id": "GAB-110",
+      "title": "Login por Matrícula",
+      "description": "Permitir login usando matrícula ao invés de email",
+      "acceptanceCriteria": [
+        "Campo 'Matrícula ou Email' no login",
+        "Se não tem @, tratar como matrícula",
+        "Buscar email do aluno pela matrícula",
+        "Fazer login com email encontrado",
+        "Mensagem de erro clara se não encontrar"
+      ],
+      "priority": 10,
+      "passes": true
+    }
+  ],
+  "metadata": {
+    "totalStories": 10,
+    "completedStories": 10,
+    "estimatedTotalMinutes": 400
+  }
+}
