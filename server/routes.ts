@@ -5328,15 +5328,23 @@ Para cada disciplina:
           .limit(10);
 
         // 3. Buscar listas de exercícios recomendadas
-        const { data: listas } = await supabaseAdmin
+        // Nota: tri_min e tri_max são INTEGER, então precisamos arredondar os valores
+        const triMinMax = Math.floor(area.tri + 100);
+        const triMaxMin = Math.floor(area.tri - 50);
+
+        const { data: listas, error: listasError } = await supabaseAdmin
           .from("exercise_lists")
-          .select("id, titulo, ordem, tri_min, tri_max")
+          .select("id, titulo, ordem, tri_min, tri_max, arquivo_url, arquivo_nome, arquivo_tipo")
           .eq("area", area.code)
-          .lte("tri_min", area.tri + 100)
-          .gte("tri_max", area.tri - 50)
+          .lte("tri_min", triMinMax)
+          .gte("tri_max", triMaxMin)
           .order("tri_min", { ascending: true })
           .order("ordem", { ascending: true })
           .limit(5);
+
+        if (listasError) {
+          console.error(`[Study Plan] Erro ao buscar listas para ${area.code}:`, listasError.message);
+        }
 
         // Determinar meta da próxima faixa
         let metaProximaFaixa = 500;
@@ -5353,7 +5361,10 @@ Para cada disciplina:
           listas_recomendadas: (listas || []).map(l => ({
             id: l.id,
             titulo: l.titulo,
-            ordem: l.ordem
+            ordem: l.ordem,
+            arquivo_url: l.arquivo_url,
+            arquivo_nome: l.arquivo_nome,
+            arquivo_tipo: l.arquivo_tipo
           })),
           meta_proxima_faixa: metaProximaFaixa
         });

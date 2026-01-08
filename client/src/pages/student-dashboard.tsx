@@ -29,7 +29,7 @@ import {
 import {
   LogOut, TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
   Target, CheckCircle2, XCircle, MinusCircle, History, Eye, Calendar, BarChart3,
-  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb
+  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb, Download, FileText
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import {
@@ -123,11 +123,15 @@ interface StudyPlanArea {
     habilidade: string;
     tri_score: number;
   }>;
-  meta_proxima_faixa: {
-    faixa_atual: string;
-    proxima_faixa: string;
-    pontos_necessarios: number;
-  };
+  listas_recomendadas: Array<{
+    id: string;
+    titulo: string;
+    ordem: number;
+    arquivo_url: string;
+    arquivo_nome: string;
+    arquivo_tipo: string;
+  }>;
+  meta_proxima_faixa: number;
 }
 
 interface StudyPlanData {
@@ -941,6 +945,32 @@ export default function StudentDashboard() {
                             <p className="text-sm text-muted-foreground">
                               Parabéns! Você está em um ótimo nível nesta área.
                             </p>
+                          )}
+
+                          {/* Listas de Exercícios Recomendadas */}
+                          {plan.listas_recomendadas && plan.listas_recomendadas.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                Listas de Exercícios:
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {plan.listas_recomendadas.map((lista) => (
+                                  <a
+                                    key={lista.id}
+                                    href={lista.arquivo_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
+                                      ${areaConfig.colors.border} ${areaConfig.colors.text}
+                                      hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors`}
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    {lista.titulo.replace(/Lista \d+ - /, '').replace(/\(\d+-\d+\)/, '').trim() || `Lista ${lista.ordem}`}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </CardContent>
                       </Card>

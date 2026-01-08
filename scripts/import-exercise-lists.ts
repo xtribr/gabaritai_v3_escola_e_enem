@@ -15,13 +15,26 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Mapeamento de pastas para códigos de área
+// Mapeamento de pastas para códigos de área (normalizado)
+function normalizeAreaName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 const FOLDER_TO_AREA: Record<string, string> = {
-  'Ciências da Natureza': 'CN',
-  'Ciências Humanas': 'CH',
-  'Linguagens': 'LC',
-  'Matemática': 'MT'
+  'ciencias da natureza': 'CN',
+  'ciencias humanas': 'CH',
+  'linguagens': 'LC',
+  'matematica': 'MT'
 };
+
+function getAreaCode(folderName: string): string | undefined {
+  const normalized = normalizeAreaName(folderName);
+  return FOLDER_TO_AREA[normalized];
+}
 
 // Parsear faixa TRI do nome da pasta
 function parseTRIRange(folderName: string): { min: number; max: number } | null {
@@ -128,9 +141,9 @@ async function importExerciseLists() {
   for (const areaDir of areaDirs) {
     if (areaDir.startsWith('.')) continue;
 
-    const area = FOLDER_TO_AREA[areaDir];
+    const area = getAreaCode(areaDir);
     if (!area) {
-      console.log(`⚠️  Área desconhecida: "${areaDir}"`);
+      console.log(`⚠️  Área desconhecida: "${areaDir}" (normalizado: ${normalizeAreaName(areaDir)})`);
       continue;
     }
 
@@ -167,8 +180,17 @@ async function importExerciseLists() {
         const stats = fs.statSync(filePath);
         const fileContent = fs.readFileSync(filePath);
 
+        // Sanitizar nome do arquivo para Supabase Storage
+        const sanitizedFilename = filename
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+          .replace(/–/g, '-')              // En-dash para hyphen
+          .replace(/—/g, '-')              // Em-dash para hyphen
+          .replace(/[^\w\s\-\.()]/g, '')   // Remove caracteres especiais
+          .replace(/\s+/g, '_');           // Espaços para underscore
+
         // Upload para Supabase Storage
-        const storagePath = `${area}/${triRange.min}-${triRange.max}/${filename}`;
+        const storagePath = `${area}/${triRange.min}-${triRange.max}/${sanitizedFilename}`;
 
         console.log(`  📤 Upload: ${filename}`);
 
