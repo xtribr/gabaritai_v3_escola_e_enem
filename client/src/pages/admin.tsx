@@ -843,7 +843,10 @@ export default function AdminPage() {
                     <Button
                       size="sm"
                       className="flex-1"
-                      onClick={() => handleGenerateGabaritos(turma.nome, school.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleGenerateGabaritos(turma.nome, school.id);
+                      }}
                       disabled={generatingPdfForTurma !== null}
                     >
                       {generatingPdfForTurma === turma.nome ? (

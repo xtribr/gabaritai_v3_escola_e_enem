@@ -4366,6 +4366,73 @@ Para cada disciplina:
     }
   });
 
+  // PUT /api/admin/turmas/:nome - Renomear turma
+  app.put("/api/admin/turmas/:nome", async (req: Request, res: Response) => {
+    try {
+      const turmaAtual = decodeURIComponent(req.params.nome);
+      const { novoNome, school_id } = req.body;
+
+      if (!novoNome) {
+        res.status(400).json({ error: "Novo nome da turma é obrigatório" });
+        return;
+      }
+
+      // Atualizar todos os alunos da turma para o novo nome
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .update({ turma: novoNome })
+        .eq('turma', turmaAtual)
+        .eq('school_id', school_id)
+        .select();
+
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        message: `Turma renomeada de "${turmaAtual}" para "${novoNome}"`,
+        alunosAtualizados: data?.length || 0
+      });
+    } catch (error: any) {
+      console.error("[TURMAS] Erro ao renomear turma:", error);
+      res.status(500).json({ error: "Erro ao renomear turma", details: error.message });
+    }
+  });
+
+  // DELETE /api/admin/turmas/:nome - Excluir turma (remove turma dos alunos, não exclui alunos)
+  app.delete("/api/admin/turmas/:nome", async (req: Request, res: Response) => {
+    try {
+      const turma = decodeURIComponent(req.params.nome);
+      const school_id = req.query.school_id as string;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Contar alunos na turma
+      const { count } = await supabaseAdmin
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('turma', turma)
+        .eq('school_id', school_id);
+
+      if (count && count > 0) {
+        res.status(400).json({
+          error: `Não é possível excluir turma com ${count} aluno(s). Remova ou mova os alunos primeiro.`
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: `Turma "${turma}" excluída com sucesso`
+      });
+    } catch (error: any) {
+      console.error("[TURMAS] Erro ao excluir turma:", error);
+      res.status(500).json({ error: "Erro ao excluir turma", details: error.message });
+    }
+  });
+
   // POST /api/admin/students - Criar um único aluno
   app.post("/api/admin/students", async (req: Request, res: Response) => {
     try {
