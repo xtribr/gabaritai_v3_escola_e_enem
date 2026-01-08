@@ -5263,5 +5263,332 @@ Para cada disciplina:
     }
   });
 
+  // ============================================================================
+  // PLANO DE ESTUDOS PERSONALIZADO POR TRI
+  // ============================================================================
+
+  // Função auxiliar para determinar faixa TRI
+  function getTriFaixa(triScore: number): 'baixo' | 'medio' | 'alto' {
+    if (triScore < 500) return 'baixo';
+    if (triScore < 650) return 'medio';
+    return 'alto';
+  }
+
+  // GET /api/student/study-plan/:studentId/:examId - Buscar/Gerar plano de estudos
+  app.get("/api/student/study-plan/:studentId/:examId", async (req: Request, res: Response) => {
+    try {
+      const { studentId, examId } = req.params;
+
+      // 1. Buscar TRI do aluno por área
+      const { data: studentResult, error: studentError } = await supabaseAdmin
+        .from("student_answers")
+        .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name")
+        .eq("student_id", studentId)
+        .eq("exam_id", examId)
+        .single();
+
+      if (studentError || !studentResult) {
+        return res.status(404).json({ error: "Resultado do aluno não encontrado" });
+      }
+
+      const areas = [
+        { code: 'LC', name: 'Linguagens', tri: studentResult.tri_lc },
+        { code: 'CH', name: 'Ciências Humanas', tri: studentResult.tri_ch },
+        { code: 'CN', name: 'Ciências da Natureza', tri: studentResult.tri_cn },
+        { code: 'MT', name: 'Matemática', tri: studentResult.tri_mt }
+      ];
+
+      const studyPlan: Array<{
+        area: string;
+        areaName: string;
+        tri_atual: number;
+        tri_faixa: string;
+        conteudos_prioritarios: Array<{ conteudo: string; habilidade: string; tri_score: number }>;
+        listas_recomendadas: Array<{ id: string; titulo: string; ordem: number }>;
+        meta_proxima_faixa: number;
+      }> = [];
+
+      for (const area of areas) {
+        if (!area.tri) continue;
+
+        const triFaixa = getTriFaixa(area.tri);
+
+        // 2. Buscar conteúdos prioritários para a faixa atual
+        // Prioriza conteúdos que o aluno DEVERIA saber mas ainda não domina
+        // Para subir de faixa, focar nos conteúdos da faixa atual e logo acima
+        const targetTRI = area.tri + 50; // Buscar conteúdos até 50 pontos acima
+
+        const { data: conteudos } = await supabaseAdmin
+          .from("study_contents")
+          .select("conteudo, habilidade, tri_score")
+          .eq("area", area.code)
+          .gte("tri_score", area.tri - 30) // Desde um pouco abaixo do TRI atual
+          .lte("tri_score", targetTRI) // Até a meta
+          .order("tri_score", { ascending: true })
+          .limit(10);
+
+        // 3. Buscar listas de exercícios recomendadas
+        const { data: listas } = await supabaseAdmin
+          .from("exercise_lists")
+          .select("id, titulo, ordem, tri_min, tri_max")
+          .eq("area", area.code)
+          .lte("tri_min", area.tri + 100)
+          .gte("tri_max", area.tri - 50)
+          .order("tri_min", { ascending: true })
+          .order("ordem", { ascending: true })
+          .limit(5);
+
+        // Determinar meta da próxima faixa
+        let metaProximaFaixa = 500;
+        if (area.tri >= 500) metaProximaFaixa = 650;
+        if (area.tri >= 650) metaProximaFaixa = 750;
+        if (area.tri >= 750) metaProximaFaixa = 850;
+
+        studyPlan.push({
+          area: area.code,
+          areaName: area.name,
+          tri_atual: area.tri,
+          tri_faixa: triFaixa,
+          conteudos_prioritarios: conteudos || [],
+          listas_recomendadas: (listas || []).map(l => ({
+            id: l.id,
+            titulo: l.titulo,
+            ordem: l.ordem
+          })),
+          meta_proxima_faixa: metaProximaFaixa
+        });
+      }
+
+      // 4. Salvar/Atualizar plano no banco (para histórico)
+      for (const plan of studyPlan) {
+        await supabaseAdmin
+          .from("student_study_plans")
+          .upsert({
+            student_id: studentId,
+            exam_id: examId,
+            area: plan.area,
+            tri_atual: plan.tri_atual,
+            tri_faixa: plan.tri_faixa,
+            conteudos_prioritarios: plan.conteudos_prioritarios,
+            listas_recomendadas: plan.listas_recomendadas.map(l => l.id),
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'student_id,exam_id,area'
+          });
+      }
+
+      res.json({
+        success: true,
+        studentName: studentResult.student_name,
+        triGeral: studentResult.tri_score,
+        studyPlan
+      });
+
+    } catch (error: any) {
+      console.error("[STUDY_PLAN] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao gerar plano de estudos",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/student/exercise-lists/:studentId - Buscar listas liberadas para o aluno
+  app.get("/api/student/exercise-lists/:studentId", async (req: Request, res: Response) => {
+    try {
+      const { studentId } = req.params;
+
+      // Buscar listas liberadas para o aluno
+      const { data: releases, error } = await supabaseAdmin
+        .from("student_list_releases")
+        .select(`
+          id,
+          released_at,
+          downloaded_at,
+          download_count,
+          exercise_lists (
+            id,
+            area,
+            tri_min,
+            tri_max,
+            titulo,
+            arquivo_nome,
+            arquivo_tipo,
+            tamanho_bytes,
+            ordem
+          )
+        `)
+        .eq("student_id", studentId)
+        .order("released_at", { ascending: false });
+
+      if (error) {
+        console.error("[EXERCISE_LISTS] Erro:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({
+        success: true,
+        releases: releases || []
+      });
+
+    } catch (error: any) {
+      console.error("[EXERCISE_LISTS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar listas de exercícios",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/student/exercise-lists/:studentId/download/:listId - Download de lista
+  app.get("/api/student/exercise-lists/:studentId/download/:listId", async (req: Request, res: Response) => {
+    try {
+      const { studentId, listId } = req.params;
+
+      // 1. Verificar se a lista está liberada para o aluno
+      const { data: release, error: releaseError } = await supabaseAdmin
+        .from("student_list_releases")
+        .select("id")
+        .eq("student_id", studentId)
+        .eq("exercise_list_id", listId)
+        .single();
+
+      if (releaseError || !release) {
+        return res.status(403).json({ error: "Lista não liberada para este aluno" });
+      }
+
+      // 2. Buscar dados da lista
+      const { data: list, error: listError } = await supabaseAdmin
+        .from("exercise_lists")
+        .select("arquivo_url, arquivo_nome")
+        .eq("id", listId)
+        .single();
+
+      if (listError || !list) {
+        return res.status(404).json({ error: "Lista não encontrada" });
+      }
+
+      // 3. Atualizar contador de downloads
+      await supabaseAdmin
+        .from("student_list_releases")
+        .update({
+          downloaded_at: new Date().toISOString(),
+          download_count: supabaseAdmin.rpc('increment', { row_id: release.id })
+        })
+        .eq("id", release.id);
+
+      // 4. Retornar URL do arquivo
+      res.json({
+        success: true,
+        downloadUrl: list.arquivo_url,
+        fileName: list.arquivo_nome
+      });
+
+    } catch (error: any) {
+      console.error("[DOWNLOAD] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao processar download",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/release-lists - Liberar listas para alunos (admin)
+  app.post("/api/admin/release-lists", async (req: Request, res: Response) => {
+    try {
+      const { studentIds, listIds } = req.body;
+
+      if (!studentIds?.length || !listIds?.length) {
+        return res.status(400).json({ error: "studentIds e listIds são obrigatórios" });
+      }
+
+      const releases = [];
+      for (const studentId of studentIds) {
+        for (const listId of listIds) {
+          releases.push({
+            student_id: studentId,
+            exercise_list_id: listId
+          });
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("student_list_releases")
+        .upsert(releases, { onConflict: 'student_id,exercise_list_id' })
+        .select();
+
+      if (error) {
+        console.error("[RELEASE_LISTS] Erro:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({
+        success: true,
+        releasedCount: data?.length || 0
+      });
+
+    } catch (error: any) {
+      console.error("[RELEASE_LISTS] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao liberar listas",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/study-contents - Listar conteúdos de estudo (para admin/debug)
+  app.get("/api/study-contents", async (req: Request, res: Response) => {
+    try {
+      const { area, tri_faixa, limit = 100 } = req.query;
+
+      let query = supabaseAdmin
+        .from("study_contents")
+        .select("*")
+        .order("tri_score", { ascending: true })
+        .limit(Number(limit));
+
+      if (area) query = query.eq("area", area as string);
+      if (tri_faixa) query = query.eq("tri_faixa", tri_faixa as string);
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({ success: true, contents: data, count });
+
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/exercise-lists - Listar todas as listas (para admin)
+  app.get("/api/exercise-lists", async (req: Request, res: Response) => {
+    try {
+      const { area } = req.query;
+
+      let query = supabaseAdmin
+        .from("exercise_lists")
+        .select("*")
+        .order("area")
+        .order("tri_min")
+        .order("ordem");
+
+      if (area) query = query.eq("area", area as string);
+
+      const { data, error } = await query;
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({ success: true, lists: data });
+
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

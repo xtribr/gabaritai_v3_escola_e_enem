@@ -1,5 +1,7 @@
 export type UserRole = 'super_admin' | 'school_admin' | 'student';
 export type ExamStatus = 'draft' | 'active' | 'closed';
+export type AreaCode = 'LC' | 'CH' | 'CN' | 'MT';
+export type TriFaixa = 'baixo' | 'medio' | 'alto';
 
 export interface School {
   id: string;
@@ -53,6 +55,60 @@ export interface StudentAnswer {
   tri_mt: number | null;
   confidence: number | null;
   created_at: string;
+}
+
+// =====================================================
+// Plano de Estudos Personalizado por TRI
+// =====================================================
+
+export interface StudyContent {
+  id: string;
+  area: AreaCode;
+  habilidade: string;
+  conteudo: string;
+  tri_score: number;
+  tri_faixa: TriFaixa;
+  created_at: string;
+}
+
+export interface ExerciseList {
+  id: string;
+  area: AreaCode;
+  tri_min: number;
+  tri_max: number;
+  titulo: string;
+  arquivo_url: string;
+  arquivo_nome: string;
+  arquivo_tipo: string;
+  tamanho_bytes: number | null;
+  ordem: number;
+  created_at: string;
+}
+
+export interface StudentStudyPlan {
+  id: string;
+  student_id: string;
+  exam_id: string;
+  area: AreaCode;
+  tri_atual: number;
+  tri_faixa: TriFaixa;
+  conteudos_prioritarios: Array<{
+    conteudo: string;
+    habilidade: string;
+    tri_score: number;
+  }>;
+  listas_recomendadas: string[]; // exercise_list_ids
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentListRelease {
+  id: string;
+  student_id: string;
+  exercise_list_id: string;
+  released_at: string;
+  downloaded_at: string | null;
+  download_count: number;
 }
 
 export interface Database {
