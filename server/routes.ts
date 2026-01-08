@@ -6038,5 +6038,330 @@ Para cada disciplina:
     }
   });
 
+  // ============================================================================
+  // CRUD ESCOLAS (SUPER_ADMIN ONLY)
+  // ============================================================================
+
+  // GET /api/schools - Lista todas as escolas
+  app.get("/api/schools", async (req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .select("*")
+        .order("name");
+
+      if (error) throw error;
+
+      res.json({ success: true, schools: data || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/schools/:id - Buscar escola por ID
+  app.get("/api/schools/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, school: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/schools - Criar escola
+  app.post("/api/schools", async (req: Request, res: Response) => {
+    try {
+      const { name, cnpj, address, city, state, contact_email, contact_phone, logo_url } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ error: "Nome da escola é obrigatório" });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .insert({
+          name,
+          cnpj: cnpj || null,
+          address: address || null,
+          city: city || null,
+          state: state || null,
+          contact_email: contact_email || null,
+          contact_phone: contact_phone || null,
+          logo_url: logo_url || null,
+          active: true
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, school: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // PUT /api/schools/:id - Atualizar escola
+  app.put("/api/schools/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, cnpj, address, city, state, contact_email, contact_phone, logo_url, active } = req.body;
+
+      const updates: any = { updated_at: new Date().toISOString() };
+      if (name !== undefined) updates.name = name;
+      if (cnpj !== undefined) updates.cnpj = cnpj;
+      if (address !== undefined) updates.address = address;
+      if (city !== undefined) updates.city = city;
+      if (state !== undefined) updates.state = state;
+      if (contact_email !== undefined) updates.contact_email = contact_email;
+      if (contact_phone !== undefined) updates.contact_phone = contact_phone;
+      if (logo_url !== undefined) updates.logo_url = logo_url;
+      if (active !== undefined) updates.active = active;
+
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, school: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // DELETE /api/schools/:id - Desativar escola (soft delete)
+  app.delete("/api/schools/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from("schools")
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, message: "Escola desativada com sucesso" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/schools/:id/stats - Estatísticas da escola
+  app.get("/api/schools/:id/stats", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Buscar total de alunos
+      const { count: totalAlunos } = await supabaseAdmin
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .eq("school_id", id)
+        .eq("role", "student");
+
+      // Buscar total de simulados
+      const { count: totalSimulados } = await supabaseAdmin
+        .from("exams")
+        .select("*", { count: "exact", head: true })
+        .eq("school_id", id);
+
+      // Buscar média TRI
+      const { data: triData } = await supabaseAdmin
+        .from("student_answers")
+        .select("tri_score")
+        .eq("school_id", id)
+        .not("tri_score", "is", null);
+
+      const triMedia = triData && triData.length > 0
+        ? triData.reduce((sum, r) => sum + (r.tri_score || 0), 0) / triData.length
+        : 0;
+
+      res.json({
+        success: true,
+        stats: {
+          totalAlunos: totalAlunos || 0,
+          totalSimulados: totalSimulados || 0,
+          triMedia: triMedia.toFixed(1)
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================================================
+  // CRUD SIMULADOS (vinculados a escolas)
+  // ============================================================================
+
+  // GET /api/simulados - Lista simulados (filtrado por school_id se fornecido)
+  app.get("/api/simulados", async (req: Request, res: Response) => {
+    try {
+      const { school_id } = req.query;
+
+      let query = supabaseAdmin
+        .from("exams")
+        .select(`
+          *,
+          schools:school_id (id, name)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (school_id) {
+        query = query.eq("school_id", school_id as string);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Buscar contagem de alunos por simulado
+      const simuladosWithStats = await Promise.all((data || []).map(async (exam) => {
+        const { count } = await supabaseAdmin
+          .from("student_answers")
+          .select("*", { count: "exact", head: true })
+          .eq("exam_id", exam.id);
+
+        return {
+          ...exam,
+          alunos_count: count || 0
+        };
+      }));
+
+      res.json({ success: true, simulados: simuladosWithStats });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/simulados - Criar simulado vinculado a escola
+  app.post("/api/simulados", async (req: Request, res: Response) => {
+    try {
+      const { school_id, title, template_type, total_questions, applied_at, answer_key } = req.body;
+
+      if (!school_id || !title) {
+        return res.status(400).json({ error: "school_id e title são obrigatórios" });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("exams")
+        .insert({
+          school_id,
+          title,
+          template_type: template_type || "custom",
+          total_questions: total_questions || 90,
+          applied_at: applied_at || null,
+          answer_key: answer_key || null,
+          status: "pending"
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, simulado: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // PUT /api/simulados/:id - Atualizar simulado
+  app.put("/api/simulados/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { title, template_type, total_questions, applied_at, status, answer_key } = req.body;
+
+      const updates: any = {};
+      if (title !== undefined) updates.title = title;
+      if (template_type !== undefined) updates.template_type = template_type;
+      if (total_questions !== undefined) updates.total_questions = total_questions;
+      if (applied_at !== undefined) updates.applied_at = applied_at;
+      if (status !== undefined) updates.status = status;
+      if (answer_key !== undefined) updates.answer_key = answer_key;
+
+      const { data, error } = await supabaseAdmin
+        .from("exams")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, simulado: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // PUT /api/simulados/:id/status - Atualizar status do simulado
+  app.put("/api/simulados/:id/status", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!["pending", "in_progress", "completed"].includes(status)) {
+        return res.status(400).json({ error: "Status inválido. Use: pending, in_progress, completed" });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("exams")
+        .update({ status })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, simulado: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // DELETE /api/simulados/:id - Deletar simulado
+  app.delete("/api/simulados/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Verificar se tem respostas vinculadas
+      const { count } = await supabaseAdmin
+        .from("student_answers")
+        .select("*", { count: "exact", head: true })
+        .eq("exam_id", id);
+
+      if (count && count > 0) {
+        return res.status(400).json({
+          error: `Não é possível excluir. Existem ${count} respostas vinculadas a este simulado.`
+        });
+      }
+
+      const { error } = await supabaseAdmin
+        .from("exams")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      res.json({ success: true, message: "Simulado excluído com sucesso" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

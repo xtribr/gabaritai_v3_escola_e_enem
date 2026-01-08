@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, Trash2, KeyRound, ChevronLeft, ChevronRight, Printer, FileText, Building2 } from 'lucide-react';
+import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, Trash2, KeyRound, ChevronLeft, ChevronRight, Printer, FileText, Building2, ClipboardList, Plus, Edit2, Power, MapPin, Phone, Mail, Calendar } from 'lucide-react';
 import { Link } from 'wouter';
 import { CsvUploader, StudentRow } from '@/components/CsvUploader';
 
@@ -69,6 +69,33 @@ interface TurmaAluno {
   email: string;
 }
 
+interface School {
+  id: string;
+  name: string;
+  slug: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  is_active: boolean;
+  created_at: string;
+  students_count?: number;
+  simulados_count?: number;
+}
+
+interface Simulado {
+  id: string;
+  name: string;
+  description: string | null;
+  school_id: string;
+  school_name?: string;
+  status: 'draft' | 'active' | 'closed';
+  questions_count: number;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  answers_count?: number;
+}
+
 export default function AdminPage() {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('alunos');
@@ -101,6 +128,23 @@ export default function AdminPage() {
   const [turmaAlunos, setTurmaAlunos] = useState<TurmaAluno[]>([]);
   const [isLoadingTurmaAlunos, setIsLoadingTurmaAlunos] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Schools states (SUPER_ADMIN only)
+  const [schools, setSchools] = useState<School[]>([]);
+  const [isLoadingSchools, setIsLoadingSchools] = useState(false);
+  const [schoolToEdit, setSchoolToEdit] = useState<School | null>(null);
+  const [showSchoolModal, setShowSchoolModal] = useState(false);
+  const [schoolForm, setSchoolForm] = useState({ name: '', slug: '', address: '', phone: '', email: '' });
+
+  // Simulados states (SUPER_ADMIN only)
+  const [simulados, setSimulados] = useState<Simulado[]>([]);
+  const [isLoadingSimulados, setIsLoadingSimulados] = useState(false);
+  const [simuladoToEdit, setSimuladoToEdit] = useState<Simulado | null>(null);
+  const [showSimuladoModal, setShowSimuladoModal] = useState(false);
+  const [simuladoForm, setSimuladoForm] = useState({ name: '', description: '', school_id: '', questions_count: 90, start_date: '', end_date: '' });
+  const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<string>('all');
+
+  const isSuperAdmin = profile?.role === 'super_admin';
 
   const handleLogout = async () => {
     await signOut();
@@ -171,12 +215,183 @@ export default function AdminPage() {
     }
   };
 
+  // Fetch schools (SUPER_ADMIN)
+  const fetchSchools = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    setIsLoadingSchools(true);
+    try {
+      const response = await fetch('/api/schools');
+      const data = await response.json();
+      if (data.success) {
+        setSchools(data.schools);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar escolas:', error);
+    } finally {
+      setIsLoadingSchools(false);
+    }
+  }, [isSuperAdmin]);
+
+  // Fetch simulados (SUPER_ADMIN)
+  const fetchSimulados = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    setIsLoadingSimulados(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedSchoolFilter && selectedSchoolFilter !== 'all') {
+        params.append('school_id', selectedSchoolFilter);
+      }
+      const response = await fetch(`/api/simulados?${params}`);
+      const data = await response.json();
+      if (data.success) {
+        setSimulados(data.simulados);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar simulados:', error);
+    } finally {
+      setIsLoadingSimulados(false);
+    }
+  }, [isSuperAdmin, selectedSchoolFilter]);
+
+  // School CRUD handlers
+  const handleSaveSchool = async () => {
+    setIsActionLoading(true);
+    try {
+      const method = schoolToEdit ? 'PUT' : 'POST';
+      const url = schoolToEdit ? `/api/schools/${schoolToEdit.id}` : '/api/schools';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schoolForm),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchSchools();
+        setShowSchoolModal(false);
+        setSchoolToEdit(null);
+        setSchoolForm({ name: '', slug: '', address: '', phone: '', email: '' });
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar escola:', error);
+      alert('Erro ao salvar escola');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleToggleSchoolStatus = async (school: School) => {
+    try {
+      const response = await fetch(`/api/schools/${school.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !school.is_active }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchSchools();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+    }
+  };
+
+  // Simulado CRUD handlers
+  const handleSaveSimulado = async () => {
+    setIsActionLoading(true);
+    try {
+      const method = simuladoToEdit ? 'PUT' : 'POST';
+      const url = simuladoToEdit ? `/api/simulados/${simuladoToEdit.id}` : '/api/simulados';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...simuladoForm,
+          questions_count: parseInt(String(simuladoForm.questions_count)) || 90,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchSimulados();
+        setShowSimuladoModal(false);
+        setSimuladoToEdit(null);
+        setSimuladoForm({ name: '', description: '', school_id: '', questions_count: 90, start_date: '', end_date: '' });
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar simulado:', error);
+      alert('Erro ao salvar simulado');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleChangeSimuladoStatus = async (simulado: Simulado, newStatus: 'draft' | 'active' | 'closed') => {
+    try {
+      const response = await fetch(`/api/simulados/${simulado.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchSimulados();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+    }
+  };
+
+  const openEditSchool = (school: School) => {
+    setSchoolToEdit(school);
+    setSchoolForm({
+      name: school.name,
+      slug: school.slug,
+      address: school.address || '',
+      phone: school.phone || '',
+      email: school.email || '',
+    });
+    setShowSchoolModal(true);
+  };
+
+  const openEditSimulado = (simulado: Simulado) => {
+    setSimuladoToEdit(simulado);
+    setSimuladoForm({
+      name: simulado.name,
+      description: simulado.description || '',
+      school_id: simulado.school_id,
+      questions_count: simulado.questions_count,
+      start_date: simulado.start_date || '',
+      end_date: simulado.end_date || '',
+    });
+    setShowSimuladoModal(true);
+  };
+
   // Load turmas when tab changes
   useEffect(() => {
     if (activeTab === 'turmas') {
       fetchTurmas();
     }
-  }, [activeTab, fetchTurmas]);
+    if (activeTab === 'escolas' && isSuperAdmin) {
+      fetchSchools();
+    }
+    if (activeTab === 'simulados' && isSuperAdmin) {
+      fetchSchools(); // Need schools for filter
+      fetchSimulados();
+    }
+  }, [activeTab, fetchTurmas, fetchSchools, fetchSimulados, isSuperAdmin]);
 
   // Load turma alunos when selected
   useEffect(() => {
@@ -238,6 +453,13 @@ export default function AdminPage() {
       fetchStudents(1);
     }
   }, [showResultsModal]);
+
+  // Refresh simulados when school filter changes
+  useEffect(() => {
+    if (activeTab === 'simulados' && isSuperAdmin) {
+      fetchSimulados();
+    }
+  }, [selectedSchoolFilter]);
 
   const handleCsvDataReady = (data: StudentRow[]) => {
     setPendingStudents(data);
@@ -428,7 +650,7 @@ export default function AdminPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-5 max-w-2xl' : 'grid-cols-3 max-w-md'}`}>
             <TabsTrigger value="alunos" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Alunos
@@ -437,9 +659,21 @@ export default function AdminPage() {
               <GraduationCap className="h-4 w-4" />
               Turmas
             </TabsTrigger>
+            {isSuperAdmin && (
+              <>
+                <TabsTrigger value="escolas" className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Escolas
+                </TabsTrigger>
+                <TabsTrigger value="simulados" className="flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Simulados
+                </TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="configuracoes" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Configurações
+              Config
             </TabsTrigger>
           </TabsList>
 
@@ -752,6 +986,259 @@ export default function AdminPage() {
             )}
           </TabsContent>
 
+          {/* ESCOLAS TAB (SUPER_ADMIN) */}
+          {isSuperAdmin && (
+            <TabsContent value="escolas" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <CardTitle>Gestão de Escolas</CardTitle>
+                      <CardDescription>
+                        {schools.length} escola(s) cadastrada(s)
+                      </CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={fetchSchools}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Atualizar
+                      </Button>
+                      <Button size="sm" onClick={() => {
+                        setSchoolToEdit(null);
+                        setSchoolForm({ name: '', slug: '', address: '', phone: '', email: '' });
+                        setShowSchoolModal(true);
+                      }}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Nova Escola
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingSchools ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : schools.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Nenhuma escola cadastrada</p>
+                      <p className="text-sm mt-2">Clique em "Nova Escola" para adicionar</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Slug</TableHead>
+                            <TableHead>Contato</TableHead>
+                            <TableHead>Alunos</TableHead>
+                            <TableHead>Simulados</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {schools.map((school) => (
+                            <TableRow key={school.id}>
+                              <TableCell className="font-medium">{school.name}</TableCell>
+                              <TableCell className="font-mono text-sm">{school.slug}</TableCell>
+                              <TableCell className="text-sm">
+                                {school.email || school.phone || '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {school.students_count || 0}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {school.simulados_count || 0}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={school.is_active ? 'default' : 'destructive'}>
+                                  {school.is_active ? 'Ativa' : 'Inativa'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openEditSchool(school)}
+                                    title="Editar"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleToggleSchoolStatus(school)}
+                                    title={school.is_active ? 'Desativar' : 'Ativar'}
+                                    className={school.is_active ? 'text-orange-600' : 'text-green-600'}
+                                  >
+                                    <Power className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {/* SIMULADOS TAB (SUPER_ADMIN) */}
+          {isSuperAdmin && (
+            <TabsContent value="simulados" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <CardTitle>Gestão de Simulados</CardTitle>
+                      <CardDescription>
+                        {simulados.length} simulado(s) encontrado(s)
+                      </CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={fetchSimulados}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Atualizar
+                      </Button>
+                      <Button size="sm" onClick={() => {
+                        setSimuladoToEdit(null);
+                        setSimuladoForm({ name: '', description: '', school_id: '', questions_count: 90, start_date: '', end_date: '' });
+                        setShowSimuladoModal(true);
+                      }} disabled={schools.length === 0}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Novo Simulado
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Filter by school */}
+                  <div className="flex gap-4">
+                    <Select value={selectedSchoolFilter} onValueChange={setSelectedSchoolFilter}>
+                      <SelectTrigger className="w-full sm:w-64">
+                        <SelectValue placeholder="Filtrar por escola" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as escolas</SelectItem>
+                        {schools.map((school) => (
+                          <SelectItem key={school.id} value={school.id}>
+                            {school.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {isLoadingSimulados ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : schools.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Nenhuma escola cadastrada</p>
+                      <p className="text-sm mt-2">Cadastre uma escola primeiro na aba "Escolas"</p>
+                    </div>
+                  ) : simulados.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <ClipboardList className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Nenhum simulado encontrado</p>
+                      <p className="text-sm mt-2">Clique em "Novo Simulado" para criar</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Escola</TableHead>
+                            <TableHead>Questões</TableHead>
+                            <TableHead>Período</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {simulados.map((simulado) => (
+                            <TableRow key={simulado.id}>
+                              <TableCell>
+                                <div>
+                                  <p className="font-medium">{simulado.name}</p>
+                                  {simulado.description && (
+                                    <p className="text-xs text-gray-500 truncate max-w-48">{simulado.description}</p>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">{simulado.school_name || '-'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{simulado.questions_count}</Badge>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {simulado.start_date ? (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {new Date(simulado.start_date).toLocaleDateString('pt-BR')}
+                                    {simulado.end_date && ` - ${new Date(simulado.end_date).toLocaleDateString('pt-BR')}`}
+                                  </span>
+                                ) : (
+                                  '-'
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Select
+                                  value={simulado.status}
+                                  onValueChange={(value: 'draft' | 'active' | 'closed') =>
+                                    handleChangeSimuladoStatus(simulado, value)
+                                  }
+                                >
+                                  <SelectTrigger className="w-24 h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="draft">
+                                      <Badge variant="secondary">Rascunho</Badge>
+                                    </SelectItem>
+                                    <SelectItem value="active">
+                                      <Badge className="bg-green-100 text-green-800">Ativo</Badge>
+                                    </SelectItem>
+                                    <SelectItem value="closed">
+                                      <Badge variant="destructive">Encerrado</Badge>
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openEditSimulado(simulado)}
+                                  title="Editar"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
           <TabsContent value="configuracoes" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1018,6 +1505,216 @@ export default function AdminPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal Escola (Criar/Editar) */}
+      <Dialog
+        open={showSchoolModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowSchoolModal(false);
+            setSchoolToEdit(null);
+            setSchoolForm({ name: '', slug: '', address: '', phone: '', email: '' });
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              {schoolToEdit ? 'Editar Escola' : 'Nova Escola'}
+            </DialogTitle>
+            <DialogDescription>
+              {schoolToEdit ? 'Atualize os dados da escola' : 'Preencha os dados da nova escola'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nome da Escola *</label>
+              <Input
+                value={schoolForm.name}
+                onChange={(e) => setSchoolForm({ ...schoolForm, name: e.target.value })}
+                placeholder="Ex: Colégio São Paulo"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Slug (identificador único) *</label>
+              <Input
+                value={schoolForm.slug}
+                onChange={(e) => setSchoolForm({
+                  ...schoolForm,
+                  slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                })}
+                placeholder="Ex: colegio-sp"
+                className="font-mono"
+              />
+              <p className="text-xs text-gray-500">Usado para URLs e identificação. Apenas letras minúsculas, números e hífens.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Mail className="h-3 w-3" /> Email
+                </label>
+                <Input
+                  type="email"
+                  value={schoolForm.email}
+                  onChange={(e) => setSchoolForm({ ...schoolForm, email: e.target.value })}
+                  placeholder="contato@escola.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Phone className="h-3 w-3" /> Telefone
+                </label>
+                <Input
+                  value={schoolForm.phone}
+                  onChange={(e) => setSchoolForm({ ...schoolForm, phone: e.target.value })}
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> Endereço
+              </label>
+              <Input
+                value={schoolForm.address}
+                onChange={(e) => setSchoolForm({ ...schoolForm, address: e.target.value })}
+                placeholder="Rua, número, bairro - Cidade/UF"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setShowSchoolModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveSchool}
+              disabled={isActionLoading || !schoolForm.name || !schoolForm.slug}
+            >
+              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {schoolToEdit ? 'Salvar' : 'Criar Escola'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Simulado (Criar/Editar) */}
+      <Dialog
+        open={showSimuladoModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowSimuladoModal(false);
+            setSimuladoToEdit(null);
+            setSimuladoForm({ name: '', description: '', school_id: '', questions_count: 90, start_date: '', end_date: '' });
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              {simuladoToEdit ? 'Editar Simulado' : 'Novo Simulado'}
+            </DialogTitle>
+            <DialogDescription>
+              {simuladoToEdit ? 'Atualize os dados do simulado' : 'Configure o novo simulado'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nome do Simulado *</label>
+              <Input
+                value={simuladoForm.name}
+                onChange={(e) => setSimuladoForm({ ...simuladoForm, name: e.target.value })}
+                placeholder="Ex: Simulado ENEM 2026 - 1º Bimestre"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Descrição</label>
+              <Input
+                value={simuladoForm.description}
+                onChange={(e) => setSimuladoForm({ ...simuladoForm, description: e.target.value })}
+                placeholder="Ex: Simulado preparatório para o ENEM"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Escola *</label>
+              <Select
+                value={simuladoForm.school_id}
+                onValueChange={(value) => setSimuladoForm({ ...simuladoForm, school_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a escola" />
+                </SelectTrigger>
+                <SelectContent>
+                  {schools.map((school) => (
+                    <SelectItem key={school.id} value={school.id}>
+                      {school.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Número de Questões</label>
+              <Input
+                type="number"
+                value={simuladoForm.questions_count}
+                onChange={(e) => setSimuladoForm({
+                  ...simuladoForm,
+                  questions_count: parseInt(e.target.value) || 90
+                })}
+                min={1}
+                max={200}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Data Início
+                </label>
+                <Input
+                  type="date"
+                  value={simuladoForm.start_date}
+                  onChange={(e) => setSimuladoForm({ ...simuladoForm, start_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Data Fim
+                </label>
+                <Input
+                  type="date"
+                  value={simuladoForm.end_date}
+                  onChange={(e) => setSimuladoForm({ ...simuladoForm, end_date: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setShowSimuladoModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveSimulado}
+              disabled={isActionLoading || !simuladoForm.name || !simuladoForm.school_id}
+            >
+              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {simuladoToEdit ? 'Salvar' : 'Criar Simulado'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
