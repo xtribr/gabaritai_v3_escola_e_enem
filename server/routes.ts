@@ -2954,6 +2954,7 @@ Para cada disciplina:
         templateType = "ENEM",
         totalQuestoes = 90,
         gabarito,
+        answerKey, // GAB-204: Aceitar tanto "gabarito" quanto "answerKey"
         questionContents,
         alunos: alunosOriginal,
         students: studentsOriginal, // GAB-203: Aceitar "students" do frontend
@@ -2961,6 +2962,9 @@ Para cada disciplina:
         schoolId, // GAB-203: Aceitar camelCase também
         created_by
       } = req.body;
+
+      // GAB-204: Aceitar tanto "gabarito" quanto "answerKey" do frontend
+      const finalAnswerKey = gabarito || answerKey || null;
 
       // GAB-203: Aceitar tanto "alunos" quanto "students", e school_id ou schoolId
       const alunos = alunosOriginal || studentsOriginal;
@@ -3015,7 +3019,7 @@ Para cada disciplina:
           title: titulo,
           template_type: templateType,
           total_questions: totalQuestoes,
-          answer_key: gabarito || null,
+          answer_key: finalAnswerKey, // GAB-204: Usar finalAnswerKey que aceita gabarito ou answerKey
           question_contents: questionContents || null,
           status: "active"
         })
