@@ -82,12 +82,12 @@ export default function EscolaPage() {
   const turmaStats = results.reduce((acc, result) => {
     const turma = result.turma || 'Sem turma';
     if (!acc[turma]) {
-      acc[turma] = { count: 0, totalScore: 0 };
+      acc[turma] = { count: 0, totalCorrect: 0 };
     }
     acc[turma].count++;
-    acc[turma].totalScore += result.score || 0;
+    acc[turma].totalCorrect += result.correct_answers || 0;
     return acc;
-  }, {} as Record<string, { count: number; totalScore: number }>);
+  }, {} as Record<string, { count: number; totalCorrect: number }>);
 
   if (loading) {
     return (
@@ -254,7 +254,7 @@ export default function EscolaPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      Média: {(data.totalScore / data.count).toFixed(1)}%
+                      Média: {(data.totalCorrect / data.count).toFixed(1)} acertos
                     </div>
                   </CardContent>
                 </Card>

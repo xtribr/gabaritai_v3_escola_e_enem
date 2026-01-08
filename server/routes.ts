@@ -5231,8 +5231,8 @@ Para cada disciplina:
 
       results.forEach((r: any) => {
         if (r.turma) turmasSet.add(r.turma);
-        if (r.score != null) {
-          totalScore += r.score;
+        if (r.correct_answers != null) {
+          totalScore += r.correct_answers;
           scoreCount++;
         }
       });
