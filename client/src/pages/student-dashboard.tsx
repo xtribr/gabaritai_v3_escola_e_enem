@@ -29,7 +29,7 @@ import {
 import {
   LogOut, TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
   Target, CheckCircle2, XCircle, MinusCircle, History, Eye, Calendar, BarChart3,
-  AlertTriangle, Users, Award
+  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import {
@@ -111,6 +111,27 @@ interface DashboardDetails {
     MT: { min: number; max: number; avg: number; count: number };
   };
   turmaSize: number;
+}
+
+interface StudyPlanArea {
+  area: string;
+  areaName: string;
+  tri_atual: number;
+  tri_faixa: string;
+  conteudos_prioritarios: Array<{
+    conteudo: string;
+    habilidade: string;
+    tri_score: number;
+  }>;
+  meta_proxima_faixa: {
+    faixa_atual: string;
+    proxima_faixa: string;
+    pontos_necessarios: number;
+  };
+}
+
+interface StudyPlanData {
+  studyPlan: StudyPlanArea[];
 }
 
 // Função para classificar TRI
@@ -334,6 +355,10 @@ export default function StudentDashboard() {
   const [selectedAreaFilter, setSelectedAreaFilter] = useState<string>('all');
   const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<string>('all');
 
+  // Estado para Plano de Estudos
+  const [studyPlan, setStudyPlan] = useState<StudyPlanData | null>(null);
+  const [studyPlanLoading, setStudyPlanLoading] = useState(false);
+
   // Buscar resultados do aluno
   useEffect(() => {
     async function fetchResults() {
@@ -389,6 +414,34 @@ export default function StudentDashboard() {
     }
 
     fetchDetails();
+  }, [results, profile?.id]);
+
+  // Buscar plano de estudos
+  useEffect(() => {
+    async function fetchStudyPlan() {
+      if (!results.length || !profile?.id) return;
+
+      const ultimoResultado = results[0];
+      if (!ultimoResultado.exam_id) return;
+
+      try {
+        setStudyPlanLoading(true);
+        const response = await fetch(
+          `/api/student/study-plan/${profile.id}/${ultimoResultado.exam_id}`
+        );
+        const data = await response.json();
+
+        if (data.success) {
+          setStudyPlan(data);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar plano de estudos:', err);
+      } finally {
+        setStudyPlanLoading(false);
+      }
+    }
+
+    fetchStudyPlan();
   }, [results, profile?.id]);
 
   // Abrir dialog com detalhes
@@ -822,6 +875,95 @@ export default function StudentDashboard() {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ========== SEÇÃO: PLANO DE ESTUDOS PERSONALIZADO ========== */}
+            {(studyPlan?.studyPlan && studyPlan.studyPlan.length > 0) && (
+              <div>
+                <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5 text-indigo-600" />
+                  Plano de Estudos Personalizado
+                </h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Baseado no seu desempenho TRI, preparamos conteúdos prioritários para você evoluir em cada área.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {studyPlan.studyPlan.map((plan) => {
+                    const areaConfig = AREA_CONFIG[plan.area as keyof typeof AREA_CONFIG];
+                    if (!areaConfig) return null;
+
+                    return (
+                      <Card key={plan.area} className={`border-2 ${areaConfig.colors.border}`}>
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                              <span className={areaConfig.colors.text}>{areaConfig.name}</span>
+                            </CardTitle>
+                            <Badge variant="outline" className="text-xs">
+                              TRI: {plan.tri_atual?.toFixed(0) || '---'}
+                            </Badge>
+                          </div>
+                          {plan.meta_proxima_faixa && plan.meta_proxima_faixa.pontos_necessarios > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                              <Lightbulb className="h-3 w-3 text-amber-500" />
+                              <span>
+                                Meta: +{plan.meta_proxima_faixa.pontos_necessarios} pontos para {plan.meta_proxima_faixa.proxima_faixa}
+                              </span>
+                            </div>
+                          )}
+                        </CardHeader>
+                        <CardContent>
+                          {plan.conteudos_prioritarios && plan.conteudos_prioritarios.length > 0 ? (
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">
+                                Conteúdos para focar:
+                              </p>
+                              <ul className="space-y-1">
+                                {plan.conteudos_prioritarios.slice(0, 5).map((conteudo, idx) => (
+                                  <li key={idx} className="flex items-start gap-2 text-sm">
+                                    <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                                    <span className="text-gray-700 dark:text-gray-300">
+                                      {conteudo.conteudo}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                              {plan.conteudos_prioritarios.length > 5 && (
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  +{plan.conteudos_prioritarios.length - 5} outros conteúdos
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Parabéns! Você está em um ótimo nível nesta área.
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {studyPlanLoading && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <GraduationCap className="h-5 w-5 text-indigo-600" />
+                    Plano de Estudos Personalizado
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
                 </CardContent>
               </Card>
             )}
