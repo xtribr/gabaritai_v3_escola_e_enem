@@ -17,6 +17,7 @@ import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
 import { storage } from "./storage.js";
 import { supabaseAdmin } from "./lib/supabase.js";
+import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
 import {
   transformStudentsForSupabase,
   transformStudentFromSupabase,
@@ -3975,7 +3976,8 @@ Para cada disciplina:
   }
 
   // POST /api/admin/import-students - Importar alunos em lote
-  app.post("/api/admin/import-students", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/import-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { students, schoolId } = req.body as {
         students: ImportStudentInput[];
@@ -4155,7 +4157,8 @@ Para cada disciplina:
   });
 
   // GET /api/admin/students - Listar alunos com filtros
-  app.get("/api/admin/students", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { turma, search, page = '1', limit = '50' } = req.query;
 
@@ -4218,7 +4221,8 @@ Para cada disciplina:
   });
 
   // POST /api/admin/reset-password - Resetar senha do aluno
-  app.post("/api/admin/reset-password", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/reset-password", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { studentId, matricula } = req.body;
 
@@ -4257,7 +4261,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/admin/students/:id - Remover aluno
-  app.delete("/api/admin/students/:id", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -4310,7 +4315,8 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/admin/turmas - Listar turmas com contagem de alunos
-  app.get("/api/admin/turmas", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       // Buscar todas as turmas distintas com contagem
       const { data: profiles, error } = await supabaseAdmin
@@ -4345,7 +4351,8 @@ Para cada disciplina:
   });
 
   // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma
-  app.get("/api/admin/turmas/:nome/alunos", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/turmas/:nome/alunos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const turma = decodeURIComponent(req.params.nome);
 
@@ -4371,7 +4378,8 @@ Para cada disciplina:
   });
 
   // POST /api/admin/turmas - Criar nova turma (criar um aluno placeholder para a turma existir)
-  app.post("/api/admin/turmas", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { nome, school_id } = req.body;
 
@@ -4408,7 +4416,8 @@ Para cada disciplina:
   });
 
   // PUT /api/admin/turmas/:nome - Renomear turma
-  app.put("/api/admin/turmas/:nome", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.put("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const turmaAtual = decodeURIComponent(req.params.nome);
       const { novoNome, school_id } = req.body;
@@ -4440,7 +4449,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/admin/turmas/:nome - Excluir turma (remove turma dos alunos, não exclui alunos)
-  app.delete("/api/admin/turmas/:nome", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.delete("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const turma = decodeURIComponent(req.params.nome);
       const school_id = req.query.school_id as string;
@@ -4475,7 +4485,8 @@ Para cada disciplina:
   });
 
   // POST /api/admin/students - Criar um único aluno
-  app.post("/api/admin/students", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { nome, matricula, turma, school_id } = req.body;
 
@@ -4544,7 +4555,8 @@ Para cada disciplina:
   });
 
   // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
-  app.post("/api/admin/generate-gabaritos", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/generate-gabaritos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { turma, alunoIds } = req.body;
 
@@ -6350,7 +6362,8 @@ Para cada disciplina:
   });
 
   // POST /api/admin/release-lists - Liberar listas para alunos (admin)
-  app.post("/api/admin/release-lists", async (req: Request, res: Response) => {
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/release-lists", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { studentIds, listIds } = req.body;
 
