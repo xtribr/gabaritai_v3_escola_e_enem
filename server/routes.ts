@@ -5153,6 +5153,13 @@ Para cada disciplina:
         if (stats.min === 1000) stats.min = 0;
       });
 
+      // 9. Dados para scatter chart (turma inteira sem nomes - privacidade)
+      const turmaScatterData = turmaResults.map(r => ({
+        acertos: r.correct_answers || 0,
+        tri: r.tri_score || 0,
+        isCurrentStudent: r.student_number === studentResult.student_number
+      }));
+
       res.json({
         success: true,
         studentResult,
@@ -5169,7 +5176,8 @@ Para cada disciplina:
         difficultyStats,
         topErrorContents,
         turmaStats,
-        turmaSize: totalStudents
+        turmaSize: totalStudents,
+        turmaScatterData
       });
 
     } catch (error: any) {

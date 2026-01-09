@@ -363,6 +363,19 @@ export default function StudentDashboard() {
   const [studyPlan, setStudyPlan] = useState<StudyPlanData | null>(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
 
+  // Estado para seleção de linhas no gráfico de evolução
+  const [visibleLines, setVisibleLines] = useState({
+    LC: true,
+    CH: true,
+    CN: true,
+    MT: true,
+    geral: true
+  });
+
+  const toggleLine = (line: keyof typeof visibleLines) => {
+    setVisibleLines(prev => ({ ...prev, [line]: !prev[line] }));
+  };
+
   // Buscar resultados do aluno
   useEffect(() => {
     async function fetchResults() {
@@ -698,7 +711,9 @@ export default function StudentDashboard() {
                             const data = payload[0].payload;
                             return (
                               <div className="bg-white border rounded-lg shadow-lg p-3">
-                                <p className="font-bold text-blue-600">{data.isStudent ? 'Você' : 'Colega'}</p>
+                                <p className={`font-bold ${data.isCurrentStudent ? 'text-blue-600' : 'text-gray-600'}`}>
+                                  {data.isCurrentStudent ? 'Você' : 'Colega'}
+                                </p>
                                 <p className="text-sm">Acertos: {data.acertos}</p>
                                 <p className="text-sm">TRI: {data.tri?.toFixed(1)}</p>
                               </div>
@@ -707,13 +722,16 @@ export default function StudentDashboard() {
                           return null;
                         }}
                       />
-                      {/* Pontos dos colegas */}
+                      {/* Pontos dos colegas (cinza) */}
                       <Scatter
-                        name="Turma"
-                        data={[
-                          // Simular dados da turma baseado nas estatísticas
-                          { acertos: ultimoResultado.correct_answers || 0, tri: ultimoResultado.tri_score || 0, isStudent: true }
-                        ]}
+                        name="Colegas"
+                        data={(details.turmaScatterData || []).filter((d: any) => !d.isCurrentStudent)}
+                        fill="#9ca3af"
+                      />
+                      {/* Seu ponto (azul, destacado) */}
+                      <Scatter
+                        name="Você"
+                        data={(details.turmaScatterData || []).filter((d: any) => d.isCurrentStudent)}
                         fill="#3b82f6"
                       />
                     </ScatterChart>
@@ -1004,8 +1022,61 @@ export default function StudentDashboard() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <TrendingUp className="h-5 w-5 text-blue-600" />
-                    Evolução do TRI por Área
+                    Evolução do TRI
                   </CardTitle>
+                  {/* Seletores de linhas */}
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      onClick={() => toggleLine('geral')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        visibleLines.geral
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      Média Geral
+                    </button>
+                    <button
+                      onClick={() => toggleLine('LC')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        visibleLines.LC
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-purple-100 text-purple-500 hover:bg-purple-200'
+                      }`}
+                    >
+                      Linguagens
+                    </button>
+                    <button
+                      onClick={() => toggleLine('CH')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        visibleLines.CH
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-orange-100 text-orange-500 hover:bg-orange-200'
+                      }`}
+                    >
+                      Humanas
+                    </button>
+                    <button
+                      onClick={() => toggleLine('CN')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        visibleLines.CN
+                          ? 'bg-green-600 text-white'
+                          : 'bg-green-100 text-green-500 hover:bg-green-200'
+                      }`}
+                    >
+                      Natureza
+                    </button>
+                    <button
+                      onClick={() => toggleLine('MT')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        visibleLines.MT
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-100 text-blue-500 hover:bg-blue-200'
+                      }`}
+                    >
+                      Matemática
+                    </button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={350}>
@@ -1044,10 +1115,11 @@ export default function StudentDashboard() {
                                 <p className="font-semibold">{data.prova}</p>
                                 <p className="text-sm text-gray-500 mb-2">{data.fullDate}</p>
                                 <div className="space-y-1 text-sm">
-                                  <p className="text-purple-600">LC: {data.LC?.toFixed(0) || '---'}</p>
-                                  <p className="text-orange-600">CH: {data.CH?.toFixed(0) || '---'}</p>
-                                  <p className="text-green-600">CN: {data.CN?.toFixed(0) || '---'}</p>
-                                  <p className="text-blue-600">MT: {data.MT?.toFixed(0) || '---'}</p>
+                                  {visibleLines.geral && <p className="text-gray-800 font-semibold">Média: {data.geral?.toFixed(0) || '---'}</p>}
+                                  {visibleLines.LC && <p className="text-purple-600">LC: {data.LC?.toFixed(0) || '---'}</p>}
+                                  {visibleLines.CH && <p className="text-orange-600">CH: {data.CH?.toFixed(0) || '---'}</p>}
+                                  {visibleLines.CN && <p className="text-green-600">CN: {data.CN?.toFixed(0) || '---'}</p>}
+                                  {visibleLines.MT && <p className="text-blue-600">MT: {data.MT?.toFixed(0) || '---'}</p>}
                                 </div>
                               </div>
                             );
@@ -1055,12 +1127,12 @@ export default function StudentDashboard() {
                           return null;
                         }}
                       />
-                      <Legend />
                       <ReferenceLine y={550} stroke="#f59e0b" strokeDasharray="5 5" />
-                      <Line type="monotone" dataKey="LC" name="Linguagens" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4 }} connectNulls />
-                      <Line type="monotone" dataKey="CH" name="Humanas" stroke="#f97316" strokeWidth={2} dot={{ r: 4 }} connectNulls />
-                      <Line type="monotone" dataKey="CN" name="Natureza" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} connectNulls />
-                      <Line type="monotone" dataKey="MT" name="Matemática" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} connectNulls />
+                      {visibleLines.geral && <Line type="monotone" dataKey="geral" name="Média Geral" stroke="#1f2937" strokeWidth={3} dot={{ r: 5 }} connectNulls />}
+                      {visibleLines.LC && <Line type="monotone" dataKey="LC" name="Linguagens" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
+                      {visibleLines.CH && <Line type="monotone" dataKey="CH" name="Humanas" stroke="#f97316" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
+                      {visibleLines.CN && <Line type="monotone" dataKey="CN" name="Natureza" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
+                      {visibleLines.MT && <Line type="monotone" dataKey="MT" name="Matemática" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} connectNulls />}
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1255,68 +1327,86 @@ export default function StudentDashboard() {
 
         {/* Dialog de Detalhes da Prova */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{selectedResult?.exams?.title || 'Detalhes da Prova'}</DialogTitle>
-              <DialogDescription>
-                {selectedResult && new Date(selectedResult.created_at).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: 'long',
-                  year: 'numeric'
-                })}
-              </DialogDescription>
-            </DialogHeader>
-
+          <DialogContent className="max-w-md p-0 overflow-hidden">
             {selectedResult && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <div className="text-sm text-gray-500">TRI Geral</div>
-                    <div className="text-3xl font-bold">{selectedResult.tri_score?.toFixed(1) || '---'}</div>
-                  </div>
-                  <Badge className={`${classificarTRI(selectedResult.tri_score).color} text-sm`}>
-                    {classificarTRI(selectedResult.tri_score).emoji} {classificarTRI(selectedResult.tri_score).label}
-                  </Badge>
-                </div>
+              <>
+                {/* Header com gradiente */}
+                <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-6 text-white">
+                  <DialogHeader>
+                    <DialogTitle className="text-white text-xl">{selectedResult.exams?.title || 'Análise da Prova'}</DialogTitle>
+                    <DialogDescription className="text-white/80">
+                      {new Date(selectedResult.created_at).toLocaleDateString('pt-BR', {
+                        weekday: 'long',
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric'
+                      })}
+                    </DialogDescription>
+                  </DialogHeader>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {(['LC', 'CH', 'CN', 'MT'] as const).map(area => {
-                    const tri = area === 'LC' ? selectedResult.tri_lc
-                      : area === 'CH' ? selectedResult.tri_ch
-                      : area === 'CN' ? selectedResult.tri_cn
-                      : selectedResult.tri_mt;
-                    return (
-                      <div key={area} className="p-3 border rounded-lg">
-                        <div className="text-sm text-gray-500 mb-1">{AREA_CONFIG[area].name}</div>
-                        <div className={`text-xl font-bold ${AREA_CONFIG[area].colors.text}`}>
-                          {tri?.toFixed(1) || '---'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-around p-4 bg-gray-50 rounded-lg">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">{selectedResult.correct_answers ?? '-'}</div>
-                    <div className="text-xs text-gray-500">Acertos</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-red-600">{selectedResult.wrong_answers ?? '-'}</div>
-                    <div className="text-xs text-gray-500">Erros</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-600">{selectedResult.blank_answers ?? '-'}</div>
-                    <div className="text-xs text-gray-500">Em Branco</div>
+                  {/* Nota TRI principal */}
+                  <div className="mt-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-white/70 text-sm">Sua nota TRI</div>
+                      <div className="text-5xl font-black">{selectedResult.tri_score?.toFixed(0) || '---'}</div>
+                    </div>
+                    <div className={`px-4 py-2 rounded-full text-sm font-bold ${
+                      classificarTRI(selectedResult.tri_score).label === 'Excelente' ? 'bg-green-400/90 text-green-900' :
+                      classificarTRI(selectedResult.tri_score).label === 'Bom' ? 'bg-blue-400/90 text-blue-900' :
+                      classificarTRI(selectedResult.tri_score).label === 'Regular' ? 'bg-yellow-400/90 text-yellow-900' :
+                      'bg-red-400/90 text-red-900'
+                    }`}>
+                      {classificarTRI(selectedResult.tri_score).emoji} {classificarTRI(selectedResult.tri_score).label}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-sm text-gray-500 space-y-1">
-                  <div>Total: {selectedResult.answers?.length || '-'} questões</div>
-                  <div>Tipo: {selectedResult.exams?.template_type || 'N/A'}</div>
-                  {selectedResult.turma && <div>Turma: {selectedResult.turma}</div>}
+                {/* Conteúdo */}
+                <div className="p-6 space-y-5">
+                  {/* Grid das 4 áreas */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+                      <div className="text-xs font-medium text-purple-600 uppercase tracking-wide">Linguagens</div>
+                      <div className="text-2xl font-bold text-purple-700 mt-1">{selectedResult.tri_lc?.toFixed(0) || '---'}</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
+                      <div className="text-xs font-medium text-orange-600 uppercase tracking-wide">Humanas</div>
+                      <div className="text-2xl font-bold text-orange-700 mt-1">{selectedResult.tri_ch?.toFixed(0) || '---'}</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-green-50 border border-green-100">
+                      <div className="text-xs font-medium text-green-600 uppercase tracking-wide">Natureza</div>
+                      <div className="text-2xl font-bold text-green-700 mt-1">{selectedResult.tri_cn?.toFixed(0) || '---'}</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Matemática</div>
+                      <div className="text-2xl font-bold text-blue-700 mt-1">{selectedResult.tri_mt?.toFixed(0) || '---'}</div>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas de respostas */}
+                  <div className="flex gap-3">
+                    <div className="flex-1 text-center p-4 bg-green-50 rounded-xl border border-green-100">
+                      <div className="text-3xl font-black text-green-600">{selectedResult.correct_answers ?? '-'}</div>
+                      <div className="text-xs text-green-600 font-medium mt-1">Acertos</div>
+                    </div>
+                    <div className="flex-1 text-center p-4 bg-red-50 rounded-xl border border-red-100">
+                      <div className="text-3xl font-black text-red-600">{selectedResult.wrong_answers ?? '-'}</div>
+                      <div className="text-xs text-red-600 font-medium mt-1">Erros</div>
+                    </div>
+                    <div className="flex-1 text-center p-4 bg-gray-50 rounded-xl border border-gray-200">
+                      <div className="text-3xl font-black text-gray-500">{selectedResult.blank_answers ?? '-'}</div>
+                      <div className="text-xs text-gray-500 font-medium mt-1">Em Branco</div>
+                    </div>
+                  </div>
+
+                  {/* Info adicional */}
+                  <div className="flex items-center justify-between text-sm text-gray-500 pt-2 border-t">
+                    <span>{selectedResult.answers?.length || 180} questões</span>
+                    <span>{selectedResult.exams?.template_type || 'ENEM'}</span>
+                    {selectedResult.turma && <span>Turma {selectedResult.turma}</span>}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </DialogContent>
         </Dialog>
