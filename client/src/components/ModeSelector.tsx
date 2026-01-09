@@ -12,8 +12,16 @@ export interface SchoolOption {
   slug: string;
 }
 
+export interface ExamOption {
+  id: string;
+  title: string;
+  template_type: string;
+  total_questions: number;
+  created_at: string;
+}
+
 interface ModeSelectorProps {
-  onSelect: (mode: "escola" | "enem", schoolId?: string, schoolName?: string) => void;
+  onSelect: (mode: "escola" | "enem", schoolId?: string, schoolName?: string, examId?: string, examTitle?: string) => void;
 }
 
 export function ModeSelector({ onSelect }: ModeSelectorProps) {
@@ -22,6 +30,11 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
   const [schools, setSchools] = useState<SchoolOption[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>("");
   const [loadingSchools, setLoadingSchools] = useState(false);
+
+  // Estado para provas
+  const [exams, setExams] = useState<ExamOption[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState<string>("");
+  const [loadingExams, setLoadingExams] = useState(false);
 
   // Carregar escolas quando entrar no passo de seleção de escola
   useEffect(() => {
@@ -39,6 +52,26 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
     }
   }, [step]);
 
+  // Carregar provas quando uma escola é selecionada
+  useEffect(() => {
+    if (selectedSchoolId) {
+      setLoadingExams(true);
+      setSelectedExamId("");
+      fetch(`/api/exams?school_id=${selectedSchoolId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.exams) {
+            setExams(data.exams);
+          }
+        })
+        .catch(console.error)
+        .finally(() => setLoadingExams(false));
+    } else {
+      setExams([]);
+      setSelectedExamId("");
+    }
+  }, [selectedSchoolId]);
+
   const handleModeSelect = (mode: "escola" | "enem") => {
     setSelectedMode(mode);
     setStep("school");
@@ -47,7 +80,8 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
   const handleConfirm = () => {
     if (!selectedMode) return;
     const school = schools.find((s) => s.id === selectedSchoolId);
-    onSelect(selectedMode, selectedSchoolId || undefined, school?.name);
+    const exam = exams.find((e) => e.id === selectedExamId);
+    onSelect(selectedMode, selectedSchoolId || undefined, school?.name, selectedExamId || undefined, exam?.title);
   };
 
   // Tela de seleção de escola
@@ -100,6 +134,41 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
                     <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
                       Nenhuma escola cadastrada. Acesse a área de Administração para criar escolas.
                     </p>
+                  )}
+
+                  {/* Dropdown de Provas - aparece após selecionar escola */}
+                  {selectedSchoolId && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Prova (opcional)
+                      </label>
+                      {loadingExams ? (
+                        <div className="flex items-center py-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="ml-2 text-sm text-slate-500">Carregando provas...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Select value={selectedExamId} onValueChange={setSelectedExamId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Selecione uma prova ou crie depois..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {exams.map((exam) => (
+                                <SelectItem key={exam.id} value={exam.id}>
+                                  {exam.title} ({exam.total_questions}q)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {exams.length === 0 && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Nenhuma prova cadastrada para esta escola. Você pode criar uma nova prova após iniciar.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
 
                   <div className="flex gap-3 mt-6">

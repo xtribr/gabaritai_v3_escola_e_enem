@@ -180,6 +180,8 @@ export default function Home() {
   const [appMode, setAppMode] = useState<AppMode>("selector");
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
   const [selectedSchoolName, setSelectedSchoolName] = useState<string | null>(null);
+  const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [selectedExamTitle, setSelectedExamTitle] = useState<string | null>(null);
 
   // ============================================================================
   // 📚 PROJETO ESCOLA - Estado para múltiplas provas/disciplinas
@@ -5830,10 +5832,12 @@ export default function Home() {
   // TELA DE SELEÇÃO DE MODO (PROVAS DA ESCOLA vs ENEM)
   // =====================================================================
   if (appMode === "selector") {
-    return <ModeSelector onSelect={(mode, schoolId, schoolName) => {
+    return <ModeSelector onSelect={(mode, schoolId, schoolName, examId, examTitle) => {
       setAppMode(mode);
       setSelectedSchoolId(schoolId || null);
       setSelectedSchoolName(schoolName || null);
+      setSelectedExamId(examId || null);
+      setSelectedExamTitle(examTitle || null);
     }} />;
   }
 
@@ -5900,11 +5904,15 @@ export default function Home() {
                     setCurrentExamConfiguration(null);
                     setSelectedSchoolId(null);
                     setSelectedSchoolName(null);
+                    setSelectedExamId(null);
+                    setSelectedExamTitle(null);
                     setAppMode("selector");
                   }
                 } else {
                   setSelectedSchoolId(null);
                   setSelectedSchoolName(null);
+                  setSelectedExamId(null);
+                  setSelectedExamTitle(null);
                   setAppMode("selector");
                 }
               }}
@@ -5921,6 +5929,12 @@ export default function Home() {
             <div className="mt-2 flex items-center gap-1 text-xs text-blue-100/90 bg-white/10 rounded px-2 py-1">
               <Building2 className="h-3 w-3" />
               <span className="truncate">{selectedSchoolName}</span>
+            </div>
+          )}
+          {selectedExamTitle && (
+            <div className="mt-1 flex items-center gap-1 text-xs text-green-100/90 bg-green-500/20 rounded px-2 py-1">
+              <FileText className="h-3 w-3" />
+              <span className="truncate">{selectedExamTitle}</span>
             </div>
           )}
         </div>
@@ -13493,6 +13507,11 @@ ${problemReport.problemPages.map(p => `
                   Escola: {selectedSchoolName}
                 </span>
               )}
+              {selectedExamTitle && (
+                <span className="block mt-1 font-medium text-green-600 dark:text-green-400">
+                  Prova: {selectedExamTitle}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -13538,6 +13557,7 @@ ${problemReport.problemPages.map(p => `
                   const payload = {
                     titulo: publishTitle.trim(),
                     school_id: selectedSchoolId,
+                    exam_id: selectedExamId,
                     templateType: predefinedTemplates[selectedTemplateIndex]?.name || "Customizado",
                     gabarito: answerKey,
                     questionContents: questionContents.length > 0 ? questionContents : undefined,
