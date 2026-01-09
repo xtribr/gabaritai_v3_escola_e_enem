@@ -3298,27 +3298,32 @@ Para cada disciplina:
   });
 
   // ============================================
-  // PROJETOS - Sistema de Persistência
+  // PROJETOS - Sistema de Persistência (Supabase)
   // ============================================
-  
-  const PROJETOS_FILE = path.join(process.cwd(), "data", "projetos.json");
 
-  async function ensureProjetosFile() {
-    // Garantir que o diretório existe (fix: ENOENT error in production)
-    const dir = path.dirname(PROJETOS_FILE);
-    await fs.mkdir(dir, { recursive: true });
-    try {
-      await fs.access(PROJETOS_FILE);
-    } catch {
-      await fs.writeFile(PROJETOS_FILE, JSON.stringify([], null, 2), "utf-8");
-    }
+  // Helper para converter snake_case do DB para camelCase do frontend
+  function projetoDbToFrontend(dbRow: any): any {
+    return {
+      id: dbRow.id,
+      nome: dbRow.nome,
+      descricao: dbRow.descricao,
+      template: dbRow.template,
+      students: dbRow.students || [],
+      answerKey: dbRow.answer_key || [],
+      questionContents: dbRow.question_contents || [],
+      statistics: dbRow.statistics,
+      triScores: dbRow.tri_scores,
+      triScoresByArea: dbRow.tri_scores_by_area,
+      dia1Processado: dbRow.dia1_processado || false,
+      dia2Processado: dbRow.dia2_processado || false,
+      createdAt: dbRow.created_at,
+      updatedAt: dbRow.updated_at
+    };
   }
 
   // POST /api/projetos - Salvar novo projeto
   app.post("/api/projetos", async (req: Request, res: Response) => {
     try {
-      await ensureProjetosFile();
-      
       const {
         nome,
         descricao,
@@ -3338,30 +3343,31 @@ Para cada disciplina:
         return;
       }
 
-      const content = await fs.readFile(PROJETOS_FILE, "utf-8");
-      const projetos: any[] = JSON.parse(content);
+      const { data, error } = await supabaseAdmin
+        .from('projetos')
+        .insert({
+          nome: nome.trim(),
+          descricao: descricao || "",
+          template: template || null,
+          students: students || [],
+          answer_key: answerKey || [],
+          question_contents: questionContents || [],
+          statistics: statistics || null,
+          tri_scores: triScores || null,
+          tri_scores_by_area: triScoresByArea || null,
+          dia1_processado: dia1ProcessadoEnviado ?? template?.name === "ENEM - Dia 1",
+          dia2_processado: dia2ProcessadoEnviado ?? template?.name === "ENEM - Dia 2"
+        })
+        .select()
+        .single();
 
-      const novoProjeto = {
-        id: randomUUID(),
-        nome: nome.trim(),
-        descricao: descricao || "",
-        template,
-        students: students || [],
-        answerKey: answerKey || [],
-        questionContents: questionContents || [],
-        statistics: statistics || null,
-        triScores: triScores || null,
-        triScoresByArea: triScoresByArea || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        dia1Processado: dia1ProcessadoEnviado ?? template?.name === "ENEM - Dia 1",
-        dia2Processado: dia2ProcessadoEnviado ?? template?.name === "ENEM - Dia 2"
-      };
+      if (error) {
+        console.error("[PROJETOS] Erro Supabase ao salvar:", error);
+        throw error;
+      }
 
-      projetos.push(novoProjeto);
-      await fs.writeFile(PROJETOS_FILE, JSON.stringify(projetos, null, 2), "utf-8");
-
-      console.log(`[PROJETOS] Projeto "${nome}" salvo com ${students?.length || 0} alunos`);
+      const novoProjeto = projetoDbToFrontend(data);
+      console.log(`[PROJETOS] Projeto "${nome}" salvo com ${students?.length || 0} alunos (Supabase)`);
 
       res.json({
         success: true,
@@ -3380,27 +3386,32 @@ Para cada disciplina:
   // GET /api/projetos - Listar todos os projetos
   app.get("/api/projetos", async (req: Request, res: Response) => {
     try {
-      await ensureProjetosFile();
-      
-      const content = await fs.readFile(PROJETOS_FILE, "utf-8");
-      const projetos: any[] = JSON.parse(content);
+      const { data, error } = await supabaseAdmin
+        .from('projetos')
+        .select('id, nome, descricao, template, students, dia1_processado, dia2_processado, created_at, updated_at')
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error("[PROJETOS] Erro Supabase ao listar:", error);
+        throw error;
+      }
 
       // Retornar lista resumida (sem dados pesados)
-      const lista = projetos.map(p => ({
+      const lista = (data || []).map(p => ({
         id: p.id,
         nome: p.nome,
         descricao: p.descricao,
-        template: p.template?.name,
-        totalAlunos: p.students?.length || 0,
-        dia1Processado: p.dia1Processado || false,
-        dia2Processado: p.dia2Processado || false,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt
+        template: (p.template as any)?.name || p.template,
+        totalAlunos: (p.students as any[])?.length || 0,
+        dia1Processado: p.dia1_processado || false,
+        dia2Processado: p.dia2_processado || false,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
       }));
 
       res.json({
         success: true,
-        projetos: lista.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        projetos: lista
       });
     } catch (error: any) {
       console.error("[PROJETOS] Erro ao listar:", error);
@@ -3414,21 +3425,26 @@ Para cada disciplina:
   // GET /api/projetos/:id - Carregar projeto específico
   app.get("/api/projetos/:id", async (req: Request, res: Response) => {
     try {
-      await ensureProjetosFile();
-      
       const { id } = req.params;
-      const content = await fs.readFile(PROJETOS_FILE, "utf-8");
-      const projetos: any[] = JSON.parse(content);
-      
-      const projeto = projetos.find(p => p.id === id);
-      if (!projeto) {
-        res.status(404).json({ error: "Projeto não encontrado" });
-        return;
+
+      const { data, error } = await supabaseAdmin
+        .from('projetos')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          res.status(404).json({ error: "Projeto não encontrado" });
+          return;
+        }
+        console.error("[PROJETOS] Erro Supabase ao buscar:", error);
+        throw error;
       }
 
       res.json({
         success: true,
-        projeto
+        projeto: projetoDbToFrontend(data)
       });
     } catch (error: any) {
       console.error("[PROJETOS] Erro ao buscar:", error);
@@ -3442,8 +3458,6 @@ Para cada disciplina:
   // PUT /api/projetos/:id - Atualizar projeto (usado para merge Dia1+Dia2)
   app.put("/api/projetos/:id", async (req: Request, res: Response) => {
     try {
-      await ensureProjetosFile();
-      
       const { id } = req.params;
       const {
         nome,
@@ -3460,46 +3474,52 @@ Para cada disciplina:
         dia2Processado: dia2ProcessadoEnviado
       } = req.body;
 
-      const content = await fs.readFile(PROJETOS_FILE, "utf-8");
-      const projetos: any[] = JSON.parse(content);
-      
-      const index = projetos.findIndex(p => p.id === id);
-      if (index < 0) {
-        res.status(404).json({ error: "Projeto não encontrado" });
-        return;
+      // Buscar projeto existente no Supabase
+      const { data: existingData, error: fetchError } = await supabaseAdmin
+        .from('projetos')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          res.status(404).json({ error: "Projeto não encontrado" });
+          return;
+        }
+        throw fetchError;
       }
 
-      const projetoExistente = projetos[index];
-      
+      const projetoExistente = projetoDbToFrontend(existingData);
+
       // Se mergeStudents = true, mesclar alunos por matrícula
       let studentsFinais = students || projetoExistente.students;
       let answerKeyFinal = answerKey || projetoExistente.answerKey;
-      
+
       if (mergeStudents && students && projetoExistente.students) {
         console.log(`[PROJETOS] Mesclando ${students.length} novos alunos com ${projetoExistente.students.length} existentes`);
-        
+
         const isDia2 = template?.name === "ENEM - Dia 2";
         const isDia1 = template?.name === "ENEM - Dia 1";
-        
+
         // Criar mapa de alunos existentes por matrícula
         const mapaExistentes = new Map();
         for (const student of projetoExistente.students) {
           const chave = student.studentNumber || student.studentName;
           mapaExistentes.set(chave, student);
         }
-        
+
         // Mesclar novos alunos
         for (const novoAluno of students) {
           const chave = novoAluno.studentNumber || novoAluno.studentName;
           const existente = mapaExistentes.get(chave);
-          
+
           if (existente) {
             // Aluno já existe - mesclar respostas
             console.log(`[PROJETOS] Mesclando aluno: ${chave}`);
-            
+
             // Criar array de 180 respostas
             const respostasMescladas = Array(180).fill("");
-            
+
             // Copiar respostas existentes
             if (existente.answers) {
               // Se existente é Dia 1 (90 respostas = Q1-90)
@@ -3521,7 +3541,7 @@ Para cada disciplina:
                 });
               }
             }
-            
+
             // Adicionar novas respostas
             if (novoAluno.answers) {
               if (isDia2) {
@@ -3536,12 +3556,12 @@ Para cada disciplina:
                 });
               }
             }
-            
+
             // Atualizar aluno existente
             existente.answers = respostasMescladas;
             existente.areaCorrectAnswers = {}; // Resetar para recalcular
             existente.areaScores = {}; // Resetar para recalcular
-            
+
             // Mesclar scores se houver
             if (novoAluno.areaScores) {
               existente.areaScores = { ...existente.areaScores, ...novoAluno.areaScores };
@@ -3549,7 +3569,7 @@ Para cada disciplina:
             if (novoAluno.areaCorrectAnswers) {
               existente.areaCorrectAnswers = { ...existente.areaCorrectAnswers, ...novoAluno.areaCorrectAnswers };
             }
-            
+
             mapaExistentes.set(chave, existente);
           } else {
             // Aluno novo - adicionar com respostas em 180 elementos
@@ -3569,37 +3589,37 @@ Para cada disciplina:
             mapaExistentes.set(chave, novoAluno);
           }
         }
-        
+
         studentsFinais = Array.from(mapaExistentes.values());
-        
+
         // Mesclar answerKey também (180 elementos)
         if (answerKey && projetoExistente.answerKey) {
           answerKeyFinal = Array(180).fill("");
-          
+
           // Copiar existente
           projetoExistente.answerKey.forEach((ans: string, idx: number) => {
             if (idx < 180 && ans) answerKeyFinal[idx] = ans;
           });
-          
+
           // Sobrescrever com novo (apenas posições com valor)
           answerKey.forEach((ans: string, idx: number) => {
             if (idx < 180 && ans) answerKeyFinal[idx] = ans;
           });
         }
-        
+
         console.log(`[PROJETOS] Resultado: ${studentsFinais.length} alunos após merge`);
       }
 
       // Mesclar triScores se mergeStudents
       let triScoresFinal = triScores || projetoExistente.triScores;
       let triScoresByAreaFinal = triScoresByArea || projetoExistente.triScoresByArea;
-      
+
       if (mergeStudents && triScores && projetoExistente.triScores) {
         // Mesclar triScores: combinar existente com novo
         triScoresFinal = { ...projetoExistente.triScores, ...triScores };
         console.log(`[PROJETOS] triScores mesclados: ${Object.keys(triScoresFinal).length} alunos`);
       }
-      
+
       if (mergeStudents && triScoresByArea && projetoExistente.triScoresByArea) {
         // Mesclar triScoresByArea: para cada aluno, combinar áreas
         triScoresByAreaFinal = { ...projetoExistente.triScoresByArea };
@@ -3610,30 +3630,38 @@ Para cada disciplina:
         console.log(`[PROJETOS] triScoresByArea mesclados: ${Object.keys(triScoresByAreaFinal).length} alunos`);
       }
 
-      // Atualizar projeto
-      projetos[index] = {
-        ...projetoExistente,
-        nome: nome || projetoExistente.nome,
-        descricao: descricao !== undefined ? descricao : projetoExistente.descricao,
-        template: template || projetoExistente.template,
-        students: studentsFinais,
-        answerKey: answerKeyFinal,
-        questionContents: questionContents || projetoExistente.questionContents,
-        statistics: statistics || projetoExistente.statistics,
-        triScores: triScoresFinal,
-        triScoresByArea: triScoresByAreaFinal,
-        updatedAt: new Date().toISOString(),
-        // Acumular dias processados: manter true se já estava true OU se está sendo processado agora
-        dia1Processado: dia1ProcessadoEnviado || projetoExistente.dia1Processado || template?.name === "ENEM - Dia 1",
-        dia2Processado: dia2ProcessadoEnviado || projetoExistente.dia2Processado || template?.name === "ENEM - Dia 2"
-      };
+      // Atualizar projeto no Supabase
+      const { data: updatedData, error: updateError } = await supabaseAdmin
+        .from('projetos')
+        .update({
+          nome: nome || projetoExistente.nome,
+          descricao: descricao !== undefined ? descricao : projetoExistente.descricao,
+          template: template || projetoExistente.template,
+          students: studentsFinais,
+          answer_key: answerKeyFinal,
+          question_contents: questionContents || projetoExistente.questionContents,
+          statistics: statistics || projetoExistente.statistics,
+          tri_scores: triScoresFinal,
+          tri_scores_by_area: triScoresByAreaFinal,
+          // Acumular dias processados: manter true se já estava true OU se está sendo processado agora
+          dia1_processado: dia1ProcessadoEnviado || projetoExistente.dia1Processado || template?.name === "ENEM - Dia 1",
+          dia2_processado: dia2ProcessadoEnviado || projetoExistente.dia2Processado || template?.name === "ENEM - Dia 2"
+        })
+        .eq('id', id)
+        .select()
+        .single();
 
-      await fs.writeFile(PROJETOS_FILE, JSON.stringify(projetos, null, 2), "utf-8");
+      if (updateError) {
+        console.error("[PROJETOS] Erro Supabase ao atualizar:", updateError);
+        throw updateError;
+      }
+
+      const projetoAtualizado = projetoDbToFrontend(updatedData);
 
       res.json({
         success: true,
-        projeto: projetos[index],
-        message: `Projeto "${projetos[index].nome}" atualizado com sucesso!`
+        projeto: projetoAtualizado,
+        message: `Projeto "${projetoAtualizado.nome}" atualizado com sucesso!`
       });
     } catch (error: any) {
       console.error("[PROJETOS] Erro ao atualizar:", error);
@@ -3647,27 +3675,39 @@ Para cada disciplina:
   // DELETE /api/projetos/:id - Deletar projeto
   app.delete("/api/projetos/:id", async (req: Request, res: Response) => {
     try {
-      await ensureProjetosFile();
-      
       const { id } = req.params;
-      const content = await fs.readFile(PROJETOS_FILE, "utf-8");
-      const projetos: any[] = JSON.parse(content);
-      
-      const index = projetos.findIndex(p => p.id === id);
-      if (index < 0) {
-        res.status(404).json({ error: "Projeto não encontrado" });
-        return;
+
+      // Primeiro buscar o nome para log
+      const { data: projeto, error: fetchError } = await supabaseAdmin
+        .from('projetos')
+        .select('nome')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          res.status(404).json({ error: "Projeto não encontrado" });
+          return;
+        }
+        throw fetchError;
       }
 
-      const nomeRemovido = projetos[index].nome;
-      projetos.splice(index, 1);
-      await fs.writeFile(PROJETOS_FILE, JSON.stringify(projetos, null, 2), "utf-8");
+      // Deletar projeto
+      const { error: deleteError } = await supabaseAdmin
+        .from('projetos')
+        .delete()
+        .eq('id', id);
 
-      console.log(`[PROJETOS] Projeto "${nomeRemovido}" deletado`);
+      if (deleteError) {
+        console.error("[PROJETOS] Erro Supabase ao deletar:", deleteError);
+        throw deleteError;
+      }
+
+      console.log(`[PROJETOS] Projeto "${projeto.nome}" deletado (Supabase)`);
 
       res.json({
         success: true,
-        message: `Projeto "${nomeRemovido}" deletado com sucesso!`
+        message: `Projeto "${projeto.nome}" deletado com sucesso!`
       });
     } catch (error: any) {
       console.error("[PROJETOS] Erro ao deletar:", error);
