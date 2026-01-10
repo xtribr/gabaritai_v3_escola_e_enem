@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay ~/.claude/songs/duolingo-correct.mp3"
+          }
+        ]
+      }
+    ]
+  },
+  "includeCoAuthoredBy": false
+}
