@@ -27,10 +27,10 @@ import {
 } from "@shared/transforms";
 
 // Configuração dos serviços Python
-// Modal.com tem URLs separadas para cada endpoint
+// Modal.com - ASGI app com FastAPI
 const USE_MODAL = process.env.USE_MODAL === "true";
-const MODAL_OMR_HEALTH_URL = "https://xtribr--gabaritai-omr-health.modal.run";
-const MODAL_OMR_PROCESS_URL = "https://xtribr--gabaritai-omr-process-image.modal.run";
+const MODAL_OMR_HEALTH_URL = "https://xtribr--omr-api.modal.run/health";
+const MODAL_OMR_PROCESS_URL = "https://xtribr--omr-api.modal.run/process-image";
 
 const PYTHON_OMR_SERVICE_URL = process.env.PYTHON_OMR_URL || "http://localhost:5002";
 const PYTHON_TRI_SERVICE_URL = process.env.PYTHON_TRI_URL || "http://localhost:5003";
