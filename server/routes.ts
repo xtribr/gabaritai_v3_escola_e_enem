@@ -747,11 +747,11 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           await fs.writeFile(tempPdfPath, singlePagePdfBytes);
 
           try {
-            // DPI 200 para balancear qualidade, tamanho e detecção de bolhas
-            await execAsync(`pdftoppm -png -r 200 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
+            // DPI 300 para melhor detecção de bolhas (busca 2D ativa)
+            await execAsync(`pdftoppm -png -r 300 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
           } catch {
-            // Fallback: usar sharp com DPI 200
-            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 200 }).png().toBuffer();
+            // Fallback: usar sharp com DPI 300
+            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 300 }).png().toBuffer();
             await fs.writeFile(`${tempPngPath}.png`, sharpImage);
           }
 
