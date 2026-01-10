@@ -360,21 +360,8 @@ function convertPythonOMRToInternal(
   const first10 = detectedAnswers.slice(0, 10).map((ans, idx) => `Q${idx + 1}="${ans || 'null'}"`).join(", ");
   console.log(`[DEBUG CONVERSION] Primeiras 10 questões: ${first10}`);
 
-  // Nova fórmula de confiança baseada na força da detecção
-  // Range: 0.70 a 0.98 proporcional às respostas detectadas
-  const doubleMarkedCount = detectedAnswers.filter(a => a === "X").length;
-  const answerRatio = answeredCount / totalQuestions;
-
-  // Base 0.70 + até 0.28 adicional (máximo 98%)
-  let confidence = 0.70 + (answerRatio * 0.28);
-
-  // Penalidade por dupla marcação (indica problemas de leitura)
-  confidence -= (doubleMarkedCount * 0.015);
-
-  // Limitar ao range válido
-  confidence = Math.max(0.40, Math.min(0.98, confidence));
-
-  const overallConfidence = answeredCount > 0 ? confidence : 0.40;
+  // Fórmula de confiança original (calibrada para DPI 300)
+  const overallConfidence = answeredCount > 0 ? Math.min(0.95, 0.5 + (answeredCount / totalQuestions) * 0.45) : 0.3;
 
   return {
     detectedAnswers,
@@ -747,11 +734,11 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           await fs.writeFile(tempPdfPath, singlePagePdfBytes);
 
           try {
-            // DPI 200 para balancear qualidade, tamanho e detecção de bolhas
-            await execAsync(`pdftoppm -png -r 200 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
+            // DPI 300 para melhor detecção de bolhas pelo OMR (calibração original)
+            await execAsync(`pdftoppm -png -r 300 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
           } catch {
-            // Fallback: usar sharp com DPI 200
-            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 200 }).png().toBuffer();
+            // Fallback: usar sharp com DPI 300
+            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 300 }).png().toBuffer();
             await fs.writeFile(`${tempPngPath}.png`, sharpImage);
           }
 
