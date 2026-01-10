@@ -62,7 +62,7 @@ MARKED_THRESHOLD = 50.0      # % escuro absoluto para considerar marcado
 BLANK_THRESHOLD = 45.0       # Se a mais escura < 45%, questao em branco
 RELATIVE_DIFF = 8.0          # Diferenca minima entre 1a e 2a para ser marcacao clara
 DOUBLE_MARK_DIFF = 5.0       # Se diff < 5% entre 1a e 2a (ambas altas), dupla marcacao
-DARK_PIXEL_THRESHOLD = 180   # Valor de pixel para considerar escuro (calibrado para DPI 300)
+DARK_PIXEL_THRESHOLD = 175   # Valor de pixel para considerar escuro (aumentado para pegar marcas mais claras)
 
 # Flag para salvar imagens de debug
 DEBUG_MODE = os.getenv('OMR_DEBUG', 'false').lower() == 'true'
@@ -293,33 +293,44 @@ def analyze_bubble(gray, x, y, scale_x, scale_y):
 
 
 def analyze_bubble_with_search(gray, x, y, scale_x, scale_y):
-    """Analisa uma bolha com busca local para compensar desalinhamentos."""
+    """Analisa uma bolha com busca 2D e foco no CENTRO para tolerar marcações incompletas."""
     h, w = gray.shape
-    r = int(BUBBLE_RADIUS * scale_x * 1.3)
-    search_range = int(15 * scale_y)  # Buscar +/- 15 pixels na vertical
+    r_full = int(BUBBLE_RADIUS * scale_x * 1.3)  # Raio completo para busca
+    r_center = int(BUBBLE_RADIUS * scale_x * 0.7)  # Raio interno (60%) para análise
+
+    # Busca ampliada: 20px base, step 4 para mais granularidade
+    search_range_y = int(20 * scale_y)
+    search_range_x = int(10 * scale_x)  # Busca horizontal menor
 
     best_darkness = 0.0
 
-    # Buscar na posição original e posições próximas
-    for dy in range(-search_range, search_range + 1, 5):
-        test_y = y + dy
-        if test_y - r < 0 or test_y + r >= h:
-            continue
+    # Busca 2D: vertical E horizontal para compensar desalinhamentos
+    for dy in range(-search_range_y, search_range_y + 1, 4):
+        for dx in range(-search_range_x, search_range_x + 1, 4):
+            test_y = y + dy
+            test_x = x + dx
 
-        x1 = max(0, x - r)
-        x2 = min(w, x + r)
-        y1 = max(0, test_y - r)
-        y2 = min(h, test_y + r)
+            if test_y - r_full < 0 or test_y + r_full >= h:
+                continue
+            if test_x - r_full < 0 or test_x + r_full >= w:
+                continue
 
-        roi = gray[y1:y2, x1:x2]
-        if roi.size == 0:
-            continue
+            # ANÁLISE CENTRO-PONDERADA: Focar no núcleo interno da bolha
+            # Isso tolera marcações incompletas onde o aluno não preencheu totalmente
+            x1 = max(0, test_x - r_center)
+            x2 = min(w, test_x + r_center)
+            y1 = max(0, test_y - r_center)
+            y2 = min(h, test_y + r_center)
 
-        dark_pixels = np.sum(roi < DARK_PIXEL_THRESHOLD)
-        darkness = (dark_pixels / roi.size) * 100.0
+            roi = gray[y1:y2, x1:x2]
+            if roi.size == 0:
+                continue
 
-        if darkness > best_darkness:
-            best_darkness = darkness
+            dark_pixels = np.sum(roi < DARK_PIXEL_THRESHOLD)
+            darkness = (dark_pixels / roi.size) * 100.0
+
+            if darkness > best_darkness:
+                best_darkness = darkness
 
     return best_darkness
 
@@ -353,9 +364,10 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     # Valores de referencia template vazio: mean=37%, std=1.0, diff=0.5-1.0
 
     # 1. QUESTAO EM BRANCO
-    #    - Se std baixo (<2.0) E diff baixo (<2.0), ninguem marcou
+    #    - Se std baixo (<1.2) E diff baixo (<1.2), ninguem marcou
     #    - Template vazio tem std~1.0 e diff~0.5-1.0
-    if std_dark < 2.0 and diff < 2.0:
+    #    AJUSTE: Thresholds mais baixos para evitar falsos "em branco"
+    if std_dark < 1.2 and diff < 1.2:
         return None
 
     # 2. DUPLA MARCACAO
@@ -363,20 +375,33 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     if std_dark > 3.0:
         z_best = (best['darkness'] - mean_dark) / std_dark
         z_second = (second['darkness'] - mean_dark) / std_dark
-        if z_best > 1.0 and z_second > 1.0 and diff < 3.0:
+        if z_best > 1.0 and z_second > 1.0 and diff < 2.0:
             return 'X'
 
     # 3. MARCACAO CLARA (criterio principal)
-    #    - Diferenca significativa entre 1a e 2a (>= 3.0)
-    if diff >= 3.0:
+    #    - Diferenca significativa entre 1a e 2a (>= 1.8)
+    #    AJUSTE: Reduzido para pegar marcas mais leves
+    if diff >= 1.8:
+        return best['label']
+
+    # 3.5. MARCACAO MODERADA (threshold intermediário)
+    #    - Diferenca moderada (>= 1.4) E bolha escura o suficiente (> 40%)
+    #    - Pega marcas que caem no "buraco" entre critério 3 e 4
+    if diff >= 1.4 and best['darkness'] > 40.0:
         return best['label']
 
     # 4. MARCACAO POR Z-SCORE (para variacao alta)
     #    - A melhor esta muito acima da media (outlier)
-    if std_dark >= 2.0:
+    #    AJUSTE: Criterios mais sensíveis
+    if std_dark >= 1.2:
         z_score_best = (best['darkness'] - mean_dark) / std_dark
-        if z_score_best > 1.5 and diff >= 2.0:
+        if z_score_best > 1.0 and diff >= 1.2:
             return best['label']
+
+    # 5. FALLBACK: Se a melhor bolha esta significativamente mais escura que a media
+    #    AJUSTE: Mais sensível para marcas muito leves
+    if best['darkness'] > mean_dark + 2.5 and diff >= 0.8:
+        return best['label']
 
     return None
 
