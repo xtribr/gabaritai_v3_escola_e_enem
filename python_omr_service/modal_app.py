@@ -47,9 +47,25 @@ def omr_api():
 
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
+    from fastapi.middleware.cors import CORSMiddleware
     import traceback
 
     fastapi_app = FastAPI()
+
+    # CORS para permitir chamadas diretas do frontend
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://xtri-gabarito.app",
+            "https://xtri-gabarito-app.vercel.app",
+            "https://*.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Debug: list files to see if app.py is there
     @fastapi_app.get("/debug")
