@@ -373,6 +373,12 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     if diff >= 1.8:
         return best['label']
 
+    # 3.5. MARCACAO MODERADA (threshold intermediário)
+    #    - Diferenca moderada (>= 1.4) E bolha escura o suficiente (> 40%)
+    #    - Pega marcas que caem no "buraco" entre critério 3 e 4
+    if diff >= 1.4 and best['darkness'] > 40.0:
+        return best['label']
+
     # 4. MARCACAO POR Z-SCORE (para variacao alta)
     #    - A melhor esta muito acima da media (outlier)
     #    AJUSTE: Criterios mais sensíveis

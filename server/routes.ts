@@ -360,7 +360,21 @@ function convertPythonOMRToInternal(
   const first10 = detectedAnswers.slice(0, 10).map((ans, idx) => `Q${idx + 1}="${ans || 'null'}"`).join(", ");
   console.log(`[DEBUG CONVERSION] Primeiras 10 questões: ${first10}`);
 
-  const overallConfidence = answeredCount > 0 ? Math.min(0.95, 0.5 + (answeredCount / totalQuestions) * 0.45) : 0.3;
+  // Nova fórmula de confiança baseada na força da detecção
+  // Range: 0.70 a 0.98 proporcional às respostas detectadas
+  const doubleMarkedCount = detectedAnswers.filter(a => a === "X").length;
+  const answerRatio = answeredCount / totalQuestions;
+
+  // Base 0.70 + até 0.28 adicional (máximo 98%)
+  let confidence = 0.70 + (answerRatio * 0.28);
+
+  // Penalidade por dupla marcação (indica problemas de leitura)
+  confidence -= (doubleMarkedCount * 0.015);
+
+  // Limitar ao range válido
+  confidence = Math.max(0.40, Math.min(0.98, confidence));
+
+  const overallConfidence = answeredCount > 0 ? confidence : 0.40;
 
   return {
     detectedAnswers,
@@ -733,11 +747,11 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           await fs.writeFile(tempPdfPath, singlePagePdfBytes);
 
           try {
-            // DPI 300 para melhor detecção de bolhas pelo OMR
-            await execAsync(`pdftoppm -png -r 300 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
+            // DPI 150 para balancear qualidade e tamanho (otimizado para OMR)
+            await execAsync(`pdftoppm -png -r 150 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
           } catch {
-            // Fallback: usar sharp com DPI 300
-            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 300 }).png().toBuffer();
+            // Fallback: usar sharp com DPI 150
+            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 150 }).png().toBuffer();
             await fs.writeFile(`${tempPngPath}.png`, sharpImage);
           }
 

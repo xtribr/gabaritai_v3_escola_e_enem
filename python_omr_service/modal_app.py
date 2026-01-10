@@ -38,7 +38,7 @@ def health():
     }
 
 
-@app.function(image=image, timeout=300)
+@app.function(image=image, timeout=300, min_containers=1)
 @modal.asgi_app(label="omr-api")
 def omr_api():
     """FastAPI app for OMR processing"""
