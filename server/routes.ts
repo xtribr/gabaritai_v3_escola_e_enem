@@ -12,7 +12,7 @@ import type { StudentData, ExamStatistics } from "@shared/schema";
 import { officialGabaritoTemplate } from "@shared/schema";
 import { extractTextFromImageDeepSeek, checkOCRService } from "./deepseekOCR.js";
 // 🆕 Abordagem Híbrida: OMR (OpenCV) + Header (GPT Vision)
-import { extractHeaderInfoWithGPT } from "./chatgptOMR.js";
+import { extractHeaderInfoWithGPT, callChatGPTVisionOMR } from "./chatgptOMR.js";
 import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
 import { storage } from "./storage.js";
@@ -785,9 +785,45 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           throw new Error(`Serviço Python OMR não disponível. Execute: cd python_omr_service && python app.py`);
         }
 
-        // 🔥 APENAS OMR ULTRA - SEM GPT
+        // 🔥 OMR ULTRA + GPT VISION AUDITORIA
         let mergedAnswers: Array<string | null> = [...omrResult.detectedAnswers];
         let scanQualityWarnings: string[] = [];
+
+        // 🤖 AUDITORIA GPT VISION: Valida e corrige respostas do OMR
+        if (enableOcr && process.env.OPENAI_API_KEY) {
+          try {
+            console.log(`[JOB ${jobId}] 🤖 Auditoria GPT Vision das respostas...`);
+            const gptAudit = await callChatGPTVisionOMR(
+              imageBuffer,
+              officialGabaritoTemplate.totalQuestions,
+              omrResult.detectedAnswers
+            );
+
+            // Aplicar correções do GPT
+            if (gptAudit.corrections && gptAudit.corrections.length > 0) {
+              console.log(`[JOB ${jobId}] 🔧 GPT encontrou ${gptAudit.corrections.length} correções:`);
+              for (const corr of gptAudit.corrections) {
+                console.log(`[JOB ${jobId}]   - Q${corr.q}: "${corr.omr}" → "${corr.corrected}" (${corr.reason || 'sem motivo'})`);
+                if (corr.q >= 1 && corr.q <= mergedAnswers.length) {
+                  mergedAnswers[corr.q - 1] = corr.corrected;
+                }
+              }
+            } else {
+              console.log(`[JOB ${jobId}] ✅ GPT confirmou respostas do OMR (sem correções)`);
+            }
+
+            // Alertas de qualidade do scan
+            if (gptAudit.scanQuality) {
+              console.log(`[JOB ${jobId}] 📊 Qualidade scan: ${gptAudit.scanQuality.quality}`);
+              if (gptAudit.scanQuality.issues && gptAudit.scanQuality.issues.length > 0) {
+                scanQualityWarnings = gptAudit.scanQuality.issues;
+                console.warn(`[JOB ${jobId}] ⚠️ Problemas: ${scanQualityWarnings.join(', ')}`);
+              }
+            }
+          } catch (gptError) {
+            console.warn(`[JOB ${jobId}] ⚠️ Erro na auditoria GPT (usando apenas OMR):`, gptError);
+          }
+        }
         
         // PASSO 4: VALIDAÇÃO DAS RESPOSTAS
         console.log(`\n[JOB ${jobId}] ━━━ PASSO 4/5: OMR ULTRA - VALIDAÇÃO (PÁGINA ${pageNumber}) ━━━`);

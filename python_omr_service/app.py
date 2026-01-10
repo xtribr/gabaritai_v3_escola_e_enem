@@ -62,7 +62,7 @@ MARKED_THRESHOLD = 50.0      # % escuro absoluto para considerar marcado
 BLANK_THRESHOLD = 45.0       # Se a mais escura < 45%, questao em branco
 RELATIVE_DIFF = 8.0          # Diferenca minima entre 1a e 2a para ser marcacao clara
 DOUBLE_MARK_DIFF = 5.0       # Se diff < 5% entre 1a e 2a (ambas altas), dupla marcacao
-DARK_PIXEL_THRESHOLD = 160   # Valor de pixel para considerar escuro (era 180, ajustado para pegar marcas mais claras)
+DARK_PIXEL_THRESHOLD = 175   # Valor de pixel para considerar escuro (aumentado para pegar marcas mais claras)
 
 # Flag para salvar imagens de debug
 DEBUG_MODE = os.getenv('OMR_DEBUG', 'false').lower() == 'true'
@@ -353,10 +353,10 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     # Valores de referencia template vazio: mean=37%, std=1.0, diff=0.5-1.0
 
     # 1. QUESTAO EM BRANCO
-    #    - Se std baixo (<1.5) E diff baixo (<1.5), ninguem marcou
+    #    - Se std baixo (<1.2) E diff baixo (<1.2), ninguem marcou
     #    - Template vazio tem std~1.0 e diff~0.5-1.0
-    #    MELHORIA: Thresholds reduzidos para evitar falsos "em branco"
-    if std_dark < 1.5 and diff < 1.5:
+    #    AJUSTE: Thresholds mais baixos para evitar falsos "em branco"
+    if std_dark < 1.2 and diff < 1.2:
         return None
 
     # 2. DUPLA MARCACAO
@@ -364,26 +364,26 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
     if std_dark > 3.0:
         z_best = (best['darkness'] - mean_dark) / std_dark
         z_second = (second['darkness'] - mean_dark) / std_dark
-        if z_best > 1.0 and z_second > 1.0 and diff < 2.5:
+        if z_best > 1.0 and z_second > 1.0 and diff < 2.0:
             return 'X'
 
     # 3. MARCACAO CLARA (criterio principal)
-    #    - Diferenca significativa entre 1a e 2a (>= 2.0)
-    #    MELHORIA: Reduzido de 3.0 para 2.0 para pegar marcas mais leves
-    if diff >= 2.0:
+    #    - Diferenca significativa entre 1a e 2a (>= 1.8)
+    #    AJUSTE: Reduzido para pegar marcas mais leves
+    if diff >= 1.8:
         return best['label']
 
     # 4. MARCACAO POR Z-SCORE (para variacao alta)
     #    - A melhor esta muito acima da media (outlier)
-    #    MELHORIA: Criterios relaxados para melhor deteccao
-    if std_dark >= 1.5:
+    #    AJUSTE: Criterios mais sensíveis
+    if std_dark >= 1.2:
         z_score_best = (best['darkness'] - mean_dark) / std_dark
-        if z_score_best > 1.2 and diff >= 1.5:
+        if z_score_best > 1.0 and diff >= 1.2:
             return best['label']
 
     # 5. FALLBACK: Se a melhor bolha esta significativamente mais escura que a media
-    #    NOVO: Criterio adicional para marcas muito leves
-    if best['darkness'] > mean_dark + 3.0 and diff >= 1.0:
+    #    AJUSTE: Mais sensível para marcas muito leves
+    if best['darkness'] > mean_dark + 2.5 and diff >= 0.8:
         return best['label']
 
     return None
