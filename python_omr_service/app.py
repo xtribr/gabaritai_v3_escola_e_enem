@@ -62,7 +62,7 @@ MARKED_THRESHOLD = 50.0      # % escuro absoluto para considerar marcado
 BLANK_THRESHOLD = 45.0       # Se a mais escura < 45%, questao em branco
 RELATIVE_DIFF = 8.0          # Diferenca minima entre 1a e 2a para ser marcacao clara
 DOUBLE_MARK_DIFF = 5.0       # Se diff < 5% entre 1a e 2a (ambas altas), dupla marcacao
-DARK_PIXEL_THRESHOLD = 175   # Valor de pixel para considerar escuro (aumentado para pegar marcas mais claras)
+DARK_PIXEL_THRESHOLD = 195   # Valor alto = mais tolerante a marcações leves (0-255, quanto maior mais tolerante)
 
 # Flag para salvar imagens de debug
 DEBUG_MODE = os.getenv('OMR_DEBUG', 'false').lower() == 'true'
@@ -379,15 +379,15 @@ def read_question(gray, q_num, col_x, row_y, scale_x, scale_y):
             return 'X'
 
     # 3. MARCACAO CLARA (criterio principal)
-    #    - Diferenca significativa entre 1a e 2a (>= 1.8)
-    #    AJUSTE: Reduzido para pegar marcas mais leves
-    if diff >= 1.8:
+    #    - Diferenca significativa entre 1a e 2a (>= 1.5)
+    #    AJUSTE: Mais permissivo para marcas leves
+    if diff >= 1.5:
         return best['label']
 
     # 3.5. MARCACAO MODERADA (threshold intermediário)
-    #    - Diferenca moderada (>= 1.4) E bolha escura o suficiente (> 40%)
-    #    - Pega marcas que caem no "buraco" entre critério 3 e 4
-    if diff >= 1.4 and best['darkness'] > 40.0:
+    #    - Diferenca moderada (>= 1.2) E bolha escura o suficiente (> 35%)
+    #    - Pega marcas leves que caem no "buraco" entre critérios
+    if diff >= 1.2 and best['darkness'] > 35.0:
         return best['label']
 
     # 4. MARCACAO POR Z-SCORE (para variacao alta)
