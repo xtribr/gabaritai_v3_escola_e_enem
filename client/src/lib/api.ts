@@ -10,3 +10,6 @@ export const apiUrl = (path: string) => path;
 
 // Para uploads, usar URL direta do backend
 export const uploadUrl = (path: string) => `${UPLOAD_URL}${path}`;
+
+// Re-exportar helpers autenticados
+export { authFetch, authPost, authGet, authPut, authDelete, authUpload } from './authFetch';

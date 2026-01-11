@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { authFetch } from '@/lib/queryClient';
+import { authFetch } from '@/lib/authFetch';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -165,7 +165,7 @@ export default function AdminPage() {
   const fetchSchools = useCallback(async () => {
     setIsLoadingSchools(true);
     try {
-      const response = await fetch('/api/schools');
+      const response = await authFetch('/api/schools');
       const data = await response.json();
       if (data.success) {
         setSchools(data.schools);
@@ -245,7 +245,7 @@ export default function AdminPage() {
   const fetchSimuladosForSchool = useCallback(async (schoolId: string) => {
     setIsLoadingSimulados(true);
     try {
-      const response = await fetch(`/api/simulados?school_id=${schoolId}`);
+      const response = await authFetch(`/api/simulados?school_id=${schoolId}`);
       const data = await response.json();
       if (data.success) {
         setSimulados(data.simulados);
@@ -381,7 +381,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch(`/api/schools/${schoolToDelete.id}`, {
+      const response = await authFetch(`/api/schools/${schoolToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -408,7 +408,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch(`/api/simulados/${simuladoToDelete.id}`, {
+      const response = await authFetch(`/api/simulados/${simuladoToDelete.id}`, {
         method: 'DELETE',
       });
 

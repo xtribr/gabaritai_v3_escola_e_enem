@@ -46,7 +46,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import type { StudentData, ExamStatistics, ExamConfiguration, ProjetoEscola, ProvaCorrigida, ResultadoAlunoProva } from "@shared/schema";
-import { uploadUrl } from "@/lib/api";
+import { uploadUrl, authFetch } from "@/lib/api";
 import { predefinedTemplates } from "@shared/schema";
 import { ExamConfigurationWizard } from "@/components/ExamConfigurationWizard";
 import { ModeSelector, type AppMode } from "@/components/ModeSelector";
@@ -206,7 +206,7 @@ export default function Home() {
     const carregarHistorico = async () => {
       try {
         // Tentar buscar do backend
-        const response = await fetch('/api/avaliacoes');
+        const response = await authFetch('/api/avaliacoes');
         if (response.ok) {
           const result = await response.json();
           if (result.avaliacoes && result.avaliacoes.length > 0) {
@@ -469,7 +469,7 @@ export default function Home() {
     const loadConfigurations = async () => {
       try {
         setConfigsLoading(true);
-        const response = await fetch('/api/exam-configurations');
+        const response = await authFetch('/api/exam-configurations');
         if (response.ok) {
           const data = await response.json();
           setSavedExamConfigurations(data.configurations || []);
@@ -1259,7 +1259,7 @@ export default function Home() {
       
       let response;
       try {
-        response = await fetch(uploadUrl("/api/process-pdf"), {
+        response = await authFetch(uploadUrl("/api/process-pdf"), {
           method: "POST",
           body: formData,
         });
@@ -1289,7 +1289,7 @@ export default function Home() {
 
       const poll = async () => {
         try {
-          const statusRes = await fetch(uploadUrl(`/api/process-pdf/${jobId}/status`));
+          const statusRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/status`));
           if (!statusRes.ok) throw new Error("Erro ao verificar status");
           
           const statusData = await statusRes.json();
@@ -1347,7 +1347,7 @@ export default function Home() {
             addProcessingLog('✅ Processamento OMR concluído!', 'success');
             addProcessingLog('📥 Obtendo resultados finais...', 'info');
             
-            const resultsRes = await fetch(uploadUrl(`/api/process-pdf/${jobId}/results`));
+            const resultsRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/results`));
             if (!resultsRes.ok) throw new Error("Erro ao obter resultados");
             
             const results = await resultsRes.json();
@@ -1601,7 +1601,7 @@ export default function Home() {
         }
       };
 
-      const response = await fetch("/api/analise-enem-tri", {
+      const response = await authFetch("/api/analise-enem-tri", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1715,7 +1715,7 @@ export default function Home() {
         }
       };
 
-      const response = await fetch("/api/analise-escola", {
+      const response = await authFetch("/api/analise-escola", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1930,7 +1930,7 @@ export default function Home() {
         }
       };
 
-      const response = await fetch("/api/analise-enem-tri", {
+      const response = await authFetch("/api/analise-enem-tri", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2664,7 +2664,7 @@ export default function Home() {
           )
         : undefined;
 
-      const response = await fetch("/api/export-excel", {
+      const response = await authFetch("/api/export-excel", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2718,7 +2718,7 @@ export default function Home() {
   const carregarListaProjetos = async () => {
     try {
       setProjetosLoading(true);
-      const response = await fetch("/api/projetos");
+      const response = await authFetch("/api/projetos");
       if (!response.ok) throw new Error("Erro ao carregar projetos");
       const data = await response.json();
       setProjetosLista(data.projetos || []);
@@ -2826,14 +2826,14 @@ export default function Home() {
       let response;
       if (projetoId) {
         // Atualizar projeto existente
-        response = await fetch(`/api/projetos/${projetoId}`, {
+        response = await authFetch(`/api/projetos/${projetoId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(projetoData)
         });
       } else {
         // Criar novo projeto
-        response = await fetch("/api/projetos", {
+        response = await authFetch("/api/projetos", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(projetoData)
@@ -2871,7 +2871,7 @@ export default function Home() {
     try {
       setProjetosLoading(true);
       
-      const response = await fetch(`/api/projetos/${id}`);
+      const response = await authFetch(`/api/projetos/${id}`);
       if (!response.ok) throw new Error("Erro ao carregar projeto");
       
       const data = await response.json();
@@ -2902,7 +2902,7 @@ export default function Home() {
           dia2Processado: isDia2Merge ? true : undefined
         };
         
-        const mergeResponse = await fetch(`/api/projetos/${id}`, {
+        const mergeResponse = await authFetch(`/api/projetos/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(mergeData)
@@ -3018,7 +3018,7 @@ export default function Home() {
               triScoresByArea: Object.fromEntries(mergedTriScoresByArea),
             };
             
-            const saveResp = await fetch(`/api/projetos/${projetoMesclado.id}`, {
+            const saveResp = await authFetch(`/api/projetos/${projetoMesclado.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(projetoAtualizado)
@@ -3110,7 +3110,7 @@ export default function Home() {
     try {
       setProjetosLoading(true);
       
-      const response = await fetch(`/api/projetos/${id}`, {
+      const response = await authFetch(`/api/projetos/${id}`, {
         method: "DELETE"
       });
       
@@ -3219,7 +3219,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append("pdf", queuedFile.file);
 
-    const response = await fetch(uploadUrl("/api/process-pdf"), {
+    const response = await authFetch(uploadUrl("/api/process-pdf"), {
       method: "POST",
       body: formData,
     });
@@ -3556,7 +3556,7 @@ export default function Home() {
     
     // Tentar salvar no backend primeiro
     try {
-      const response = await fetch('/api/avaliacoes', {
+      const response = await authFetch('/api/avaliacoes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3636,7 +3636,7 @@ export default function Home() {
     if (!avaliacao.students || !avaliacao.answerKey) {
       try {
         console.log('[Histórico] Buscando dados completos do backend para:', avaliacao.id);
-        const response = await fetch(`/api/avaliacoes/${avaliacao.id}`);
+        const response = await authFetch(`/api/avaliacoes/${avaliacao.id}`);
         
         if (response.ok) {
           const result = await response.json();
@@ -3706,7 +3706,7 @@ export default function Home() {
   const deletarAvaliacao = async (avaliacao: AvaliacaoHistorico) => {
     try {
       // Deletar do backend
-      const response = await fetch(`/api/avaliacoes/${avaliacao.id}`, {
+      const response = await authFetch(`/api/avaliacoes/${avaliacao.id}`, {
         method: 'DELETE',
       });
 
@@ -3967,7 +3967,7 @@ export default function Home() {
         areas_config["Ciências Humanas"] = [46, 90];
       }
 
-      const response = await fetch("/api/calculate-tri-v2", {
+      const response = await authFetch("/api/calculate-tri-v2", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -4228,7 +4228,7 @@ export default function Home() {
 
     try {
       // 1. Buscar dados do projeto Dia 1
-      const response = await fetch(`/api/projetos/${idToUse}`);
+      const response = await authFetch(`/api/projetos/${idToUse}`);
       if (!response.ok) {
         throw new Error("Falha ao carregar projeto Dia 1");
       }
@@ -4484,7 +4484,7 @@ export default function Home() {
         triScoresByArea: Object.fromEntries(triScoresByAreaMapFinal),
       };
 
-      const saveResp = await fetch(`/api/projetos/${idToUse}`, {
+      const saveResp = await authFetch(`/api/projetos/${idToUse}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(projetoAtualizado),
@@ -5697,7 +5697,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("csv", file);
       
-      const response = await fetch(uploadUrl("/api/preview-csv"), {
+      const response = await authFetch(uploadUrl("/api/preview-csv"), {
         method: "POST",
         body: formData,
       });
@@ -5748,7 +5748,7 @@ export default function Home() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
       
-      const response = await fetch(uploadUrl("/api/generate-pdfs"), {
+      const response = await authFetch(uploadUrl("/api/generate-pdfs"), {
         method: "POST",
         body: formData,
         signal: controller.signal,
@@ -5999,7 +5999,7 @@ export default function Home() {
                   });
 
                   // Buscar projetos salvos
-                  const response = await fetch("/api/projetos");
+                  const response = await authFetch("/api/projetos");
                   if (!response.ok) throw new Error("Erro ao buscar projetos");
                   const data = await response.json();
                   const projetos = data.projetos || [];
@@ -6976,7 +6976,7 @@ export default function Home() {
                         onClick={async () => {
                           try {
                             // Buscar do backend primeiro
-                            const response = await fetch('/api/avaliacoes');
+                            const response = await authFetch('/api/avaliacoes');
                             if (response.ok) {
                               const result = await response.json();
                               if (result.avaliacoes) {
@@ -13582,7 +13582,7 @@ ${problemReport.problemPages.map(p => `
                     }),
                   };
 
-                  const response = await fetch("/api/avaliacoes", {
+                  const response = await authFetch("/api/avaliacoes", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),

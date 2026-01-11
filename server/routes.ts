@@ -1094,7 +1094,8 @@ export async function registerRoutes(
   registerDebugRoutes(app);
   
   // Start PDF processing - returns jobId immediately
-  app.post("/api/process-pdf", upload.single("pdf"), async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode processar PDFs (funcionalidade ENEM/XTRI)
+  app.post("/api/process-pdf", requireAuth, requireRole('super_admin'), upload.single("pdf"), async (req: Request, res: Response) => {
     try {
       console.log("[UPLOAD] Recebendo arquivo...");
       
@@ -1167,7 +1168,8 @@ export async function registerRoutes(
   });
 
   // Endpoint de debug - Testa OMR Ultra
-  app.post("/api/debug-omr", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode testar OMR
+  app.post("/api/debug-omr", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       console.log("🔧 DEBUG OMR Ultra: Iniciando teste...");
 
@@ -1194,7 +1196,8 @@ export async function registerRoutes(
   });
 
   // Get job status for polling
-  app.get("/api/process-pdf/:jobId/status", (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas usuários autenticados podem verificar status
+  app.get("/api/process-pdf/:jobId/status", requireAuth, (req: Request, res: Response) => {
     const { jobId } = req.params;
     const job = jobs.get(jobId);
 
@@ -1216,7 +1219,8 @@ export async function registerRoutes(
   });
 
   // Get job results
-  app.get("/api/process-pdf/:jobId/results", (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas usuários autenticados podem ver resultados
+  app.get("/api/process-pdf/:jobId/results", requireAuth, (req: Request, res: Response) => {
     const { jobId } = req.params;
     const job = jobs.get(jobId);
 
@@ -1233,7 +1237,8 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/export-excel", async (req: Request, res: Response) => {
+  // PROTEGIDO: Exportação de Excel requer autenticação
+  app.post("/api/export-excel", requireAuth, async (req: Request, res: Response) => {
     try {
       const { students, answerKey, questionContents, statistics, includeTRI, triScores, triScoresByArea } = req.body as {
         students: StudentData[];
@@ -1299,7 +1304,8 @@ export async function registerRoutes(
 
   // Generate personalized PDFs from CSV
   // For large files (>50 students), generates multiple smaller PDFs with download links
-  app.post("/api/generate-pdfs", uploadCsv.single("csv"), async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem gerar PDFs
+  app.post("/api/generate-pdfs", requireAuth, requireRole('super_admin', 'school_admin'), uploadCsv.single("csv"), async (req: Request, res: Response) => {
     try {
       console.log("[GENERATE-PDF] Iniciando geração de PDFs personalizados...");
       const startTime = Date.now();
@@ -3083,7 +3089,8 @@ Para cada disciplina:
 
   // POST /api/avaliacoes - Salvar avaliação
   // GAB-201: POST /api/avaliacoes - Salvar avaliação no Supabase
-  app.post("/api/avaliacoes", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem salvar avaliações
+  app.post("/api/avaliacoes", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const {
         titulo,
@@ -3241,7 +3248,8 @@ Para cada disciplina:
   });
 
   // GAB-201: GET /api/avaliacoes - Listar avaliações do Supabase
-  app.get("/api/avaliacoes", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem listar avaliações
+  app.get("/api/avaliacoes", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id } = req.query;
 
@@ -3314,7 +3322,8 @@ Para cada disciplina:
   });
 
   // GAB-201: GET /api/avaliacoes/:id - Buscar avaliação específica do Supabase
-  app.get("/api/avaliacoes/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem ver avaliações
+  app.get("/api/avaliacoes/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3374,7 +3383,8 @@ Para cada disciplina:
   });
 
   // GAB-201: DELETE /api/avaliacoes/:id - Deletar avaliação do Supabase
-  app.delete("/api/avaliacoes/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem deletar avaliações
+  app.delete("/api/avaliacoes/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3457,7 +3467,8 @@ Para cada disciplina:
   }
 
   // POST /api/projetos - Salvar novo projeto
-  app.post("/api/projetos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode gerenciar projetos
+  app.post("/api/projetos", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const {
         nome,
@@ -3519,7 +3530,8 @@ Para cada disciplina:
   });
 
   // GET /api/projetos - Listar todos os projetos
-  app.get("/api/projetos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode ver projetos
+  app.get("/api/projetos", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
         .from('projetos')
@@ -3558,7 +3570,8 @@ Para cada disciplina:
   });
 
   // GET /api/projetos/:id - Carregar projeto específico
-  app.get("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode ver projetos
+  app.get("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3591,7 +3604,8 @@ Para cada disciplina:
   });
 
   // PUT /api/projetos/:id - Atualizar projeto (usado para merge Dia1+Dia2)
-  app.put("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode atualizar projetos
+  app.put("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const {
@@ -3808,7 +3822,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/projetos/:id - Deletar projeto
-  app.delete("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode deletar projetos
+  app.delete("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -6138,7 +6153,8 @@ Para cada disciplina:
   // ===========================================================================
 
   // GET /api/escola/results - Buscar resultados dos alunos da escola
-  app.get("/api/escola/results", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
+  app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       // Por enquanto, retorna todos os resultados (após implementar auth, filtrar por school_id)
       // Em produção: extrair school_id do token JWT e filtrar
@@ -6228,7 +6244,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/dashboard - Dashboard completo com rankings
-  app.get("/api/escola/dashboard", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
+  app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       // Buscar todos os resultados
       const { data: answers, error: answersError } = await supabaseAdmin
@@ -6408,7 +6425,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/turmas/:turma/alunos - Alunos de uma turma com métricas comparativas
-  app.get("/api/escola/turmas/:turma/alunos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/turmas/:turma/alunos", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
@@ -6504,7 +6522,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/alunos/:matricula/historico - Histórico completo de um aluno
-  app.get("/api/escola/alunos/:matricula/historico", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/alunos/:matricula/historico", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { matricula } = req.params;
       const decodedMatricula = decodeURIComponent(matricula);
@@ -6625,7 +6644,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/series - Lista de séries disponíveis
-  app.get("/api/escola/series", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/series", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { data: answers, error } = await supabaseAdmin
         .from("student_answers")
@@ -6676,7 +6696,8 @@ Para cada disciplina:
   }
 
   // GET /api/student/study-plan/:studentId/:examId - Buscar/Gerar plano de estudos
-  app.get("/api/student/study-plan/:studentId/:examId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Alunos podem ver seus próprios dados, admins podem ver todos
+  app.get("/api/student/study-plan/:studentId/:examId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId, examId } = req.params;
 
@@ -6806,7 +6827,8 @@ Para cada disciplina:
   });
 
   // GET /api/student/exercise-lists/:studentId - Buscar listas liberadas para o aluno
-  app.get("/api/student/exercise-lists/:studentId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas o próprio aluno ou admins
+  app.get("/api/student/exercise-lists/:studentId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId } = req.params;
 
@@ -6853,7 +6875,8 @@ Para cada disciplina:
   });
 
   // GET /api/student/exercise-lists/:studentId/download/:listId - Download de lista
-  app.get("/api/student/exercise-lists/:studentId/download/:listId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas o próprio aluno ou admins
+  app.get("/api/student/exercise-lists/:studentId/download/:listId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId, listId } = req.params;
 
@@ -7008,7 +7031,8 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/schools - Lista todas as escolas
-  app.get("/api/schools", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode listar escolas
+  app.get("/api/schools", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("schools")
@@ -7024,7 +7048,8 @@ Para cada disciplina:
   });
 
   // GET /api/schools/:id - Buscar escola por ID
-  app.get("/api/schools/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin ou school_admin da escola
+  app.get("/api/schools/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -7043,7 +7068,8 @@ Para cada disciplina:
   });
 
   // POST /api/schools - Criar escola
-  app.post("/api/schools", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode criar escolas
+  app.post("/api/schools", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { name, slug } = req.body;
 
@@ -7076,7 +7102,8 @@ Para cada disciplina:
   });
 
   // PUT /api/schools/:id - Atualizar escola
-  app.put("/api/schools/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode atualizar escolas
+  app.put("/api/schools/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { name, slug } = req.body;
@@ -7105,7 +7132,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/schools/:id - Excluir escola (CASCADE: remove provas, respostas e alunos vinculados)
-  app.delete("/api/schools/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode excluir escolas
+  app.delete("/api/schools/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -7199,7 +7227,8 @@ Para cada disciplina:
   });
 
   // GET /api/schools/:id/stats - Estatísticas da escola
-  app.get("/api/schools/:id/stats", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.get("/api/schools/:id/stats", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -7245,7 +7274,8 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/simulados - Lista simulados (filtrado por school_id se fornecido)
-  app.get("/api/simulados", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.get("/api/simulados", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id } = req.query;
 
@@ -7285,7 +7315,8 @@ Para cada disciplina:
   });
 
   // POST /api/simulados - Criar simulado vinculado a escola
-  app.post("/api/simulados", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.post("/api/simulados", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id, title, template_type, total_questions, answer_key } = req.body;
 
@@ -7315,7 +7346,8 @@ Para cada disciplina:
   });
 
   // PUT /api/simulados/:id - Atualizar simulado
-  app.put("/api/simulados/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.put("/api/simulados/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { title, template_type, total_questions, applied_at, status, answer_key } = req.body;
@@ -7344,7 +7376,8 @@ Para cada disciplina:
   });
 
   // PUT /api/simulados/:id/status - Atualizar status do simulado
-  app.put("/api/simulados/:id/status", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.put("/api/simulados/:id/status", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -7369,7 +7402,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/simulados/:id - Deletar simulado (CASCADE: remove respostas vinculadas)
-  app.delete("/api/simulados/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.delete("/api/simulados/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
