@@ -781,8 +781,8 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
     const { promisify } = await import("util");
     const execAsync = promisify(exec);
 
-    // Processar páginas sequencialmente (1 por vez para estabilidade)
-    const PARALLEL_PAGES = 1;
+    // Processar páginas em paralelo (4 com 4GB RAM disponível)
+    const PARALLEL_PAGES = 4;
     const processPage = async (pageIndex: number) => {
       const pageNumber = pageIndex + 1;
       // Declarar variáveis no início da função para evitar "used before initialization"
@@ -811,20 +811,29 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           const tempPngPath = `/tmp/page_${uniqueId}`;
           await fs.writeFile(tempPdfPath, singlePagePdfBytes);
 
+          // Variável para rastrear extensão do arquivo gerado
+          let outputExt = '.png';
+
           try {
-            // DPI 300 para melhor detecção de bolhas (busca 2D ativa)
-            await execAsync(`pdftoppm -png -r 300 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
+            // DPI 200 + grayscale + JPEG = ~3x mais rápido que PNG 300dpi
+            // Mantém qualidade suficiente para OMR (bolhas são grandes o suficiente)
+            await execAsync(`pdftoppm -jpeg -gray -r 200 -jpegopt quality=90 -singlefile "${tempPdfPath}" "${tempPngPath}"`);
+            outputExt = '.jpg';
           } catch {
-            // Fallback: usar sharp com DPI 300
-            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 300 }).png().toBuffer();
-            await fs.writeFile(`${tempPngPath}.png`, sharpImage);
+            // Fallback: usar sharp com DPI 200 e grayscale
+            const sharpImage = await sharp(Buffer.from(singlePagePdfBytes), { density: 200 })
+              .grayscale()
+              .jpeg({ quality: 90 })
+              .toBuffer();
+            await fs.writeFile(`${tempPngPath}.jpg`, sharpImage);
+            outputExt = '.jpg';
           }
 
-          imageBuffer = await fs.readFile(`${tempPngPath}.png`);
-          
+          imageBuffer = await fs.readFile(`${tempPngPath}${outputExt}`);
+
           // Cleanup temp files
           await fs.unlink(tempPdfPath).catch(() => {});
-          await fs.unlink(`${tempPngPath}.png`).catch(() => {});
+          await fs.unlink(`${tempPngPath}${outputExt}`).catch(() => {});
         }
 
         // PASSO 3: Processar OMR + QR Code
@@ -6738,13 +6747,40 @@ Para cada disciplina:
     try {
       const { studentId, examId } = req.params;
 
-      // 1. Buscar TRI do aluno por área
-      const { data: studentResult, error: studentError } = await supabaseAdmin
-        .from("student_answers")
-        .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name")
-        .eq("student_id", studentId)
-        .eq("exam_id", examId)
+      // 1. Buscar student_number do profile (studentId = profile.id)
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("student_number")
+        .eq("id", studentId)
         .single();
+
+      // 2. Buscar TRI do aluno por área usando student_number OU student_id
+      let studentResult = null;
+      let studentError = null;
+
+      if (profile?.student_number) {
+        // Buscar por student_number (mais confiável)
+        const result = await supabaseAdmin
+          .from("student_answers")
+          .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name, student_number")
+          .eq("student_number", profile.student_number)
+          .eq("exam_id", examId)
+          .single();
+        studentResult = result.data;
+        studentError = result.error;
+      }
+
+      // Fallback: tentar por student_id
+      if (!studentResult) {
+        const result = await supabaseAdmin
+          .from("student_answers")
+          .select("tri_score, tri_lc, tri_ch, tri_cn, tri_mt, student_name, student_number")
+          .eq("student_id", studentId)
+          .eq("exam_id", examId)
+          .single();
+        studentResult = result.data;
+        studentError = result.error;
+      }
 
       if (studentError || !studentResult) {
         return res.status(404).json({ error: "Resultado do aluno não encontrado" });
@@ -6763,8 +6799,25 @@ Para cada disciplina:
         tri_atual: number;
         tri_faixa: string;
         conteudos_prioritarios: Array<{ conteudo: string; habilidade: string; tri_score: number }>;
-        listas_recomendadas: Array<{ id: string; titulo: string; ordem: number }>;
-        meta_proxima_faixa: number;
+        listas_recomendadas: Array<{
+          id: string;
+          titulo: string;
+          ordem: number;
+          arquivo_url: string;
+          arquivo_nome: string;
+          arquivo_tipo: string;
+          status: 'available' | 'locked' | 'mastered';
+          tri_min: number;
+          tri_max: number;
+        }>;
+        listas_proximas: Array<{
+          id: string;
+          titulo: string;
+          tri_min: number;
+          tri_max: number;
+          pontos_para_desbloquear: number;
+        }>;
+        meta_proxima_faixa: { pontos_necessarios: number; proxima_faixa: string };
       }> = [];
 
       for (const area of areas) {
@@ -6786,30 +6839,63 @@ Para cada disciplina:
           .order("tri_score", { ascending: true })
           .limit(10);
 
-        // 3. Buscar listas de exercícios recomendadas
-        // Nota: tri_min e tri_max são INTEGER, então precisamos arredondar os valores
-        const triMinMax = Math.floor(area.tri + 100);
-        const triMaxMin = Math.floor(area.tri - 50);
-
-        const { data: listas, error: listasError } = await supabaseAdmin
+        // 3. Buscar TODAS as listas de exercícios da área para mostrar com status
+        const { data: todasListas, error: listasError } = await supabaseAdmin
           .from("exercise_lists")
           .select("id, titulo, ordem, tri_min, tri_max, arquivo_url, arquivo_nome, arquivo_tipo")
           .eq("area", area.code)
-          .lte("tri_min", triMinMax)
-          .gte("tri_max", triMaxMin)
           .order("tri_min", { ascending: true })
-          .order("ordem", { ascending: true })
-          .limit(5);
+          .order("ordem", { ascending: true });
 
         if (listasError) {
           console.error(`[Study Plan] Erro ao buscar listas para ${area.code}:`, listasError.message);
         }
 
+        // Classificar listas por status baseado no TRI do aluno
+        // Status: 'available' (TRI do aluno está na faixa), 'locked' (faixa superior), 'completed' (faixa inferior já dominada)
+        const listasComStatus = (todasListas || []).map(l => {
+          let status: 'available' | 'locked' | 'mastered' = 'locked';
+
+          // Se o TRI do aluno está dentro da faixa da lista, está disponível
+          if (area.tri >= l.tri_min - 50 && area.tri <= l.tri_max + 50) {
+            status = 'available';
+          }
+          // Se o TRI do aluno está ACIMA da faixa, já "dominou" esse nível
+          else if (area.tri > l.tri_max + 50) {
+            status = 'mastered';
+          }
+          // Se o TRI do aluno está ABAIXO, está bloqueada (precisa evoluir)
+          else {
+            status = 'locked';
+          }
+
+          return {
+            id: l.id,
+            titulo: l.titulo,
+            ordem: l.ordem,
+            tri_min: l.tri_min,
+            tri_max: l.tri_max,
+            arquivo_url: l.arquivo_url,
+            arquivo_nome: l.arquivo_nome,
+            arquivo_tipo: l.arquivo_tipo,
+            status,
+            // Quantos pontos faltam para desbloquear (se locked)
+            pontos_para_desbloquear: status === 'locked' ? Math.max(0, l.tri_min - 50 - area.tri) : 0
+          };
+        });
+
+        // Separar em categorias para o frontend
+        const listasDisponiveis = listasComStatus.filter(l => l.status === 'available');
+        const listasProximas = listasComStatus.filter(l => l.status === 'locked').slice(0, 3); // Mostrar até 3 próximas
+
         // Determinar meta da próxima faixa
         let metaProximaFaixa = 500;
-        if (area.tri >= 500) metaProximaFaixa = 650;
-        if (area.tri >= 650) metaProximaFaixa = 750;
-        if (area.tri >= 750) metaProximaFaixa = 850;
+        let proximaFaixaLabel = 'Na média';
+        if (area.tri >= 500) { metaProximaFaixa = 650; proximaFaixaLabel = 'Acima da média'; }
+        if (area.tri >= 650) { metaProximaFaixa = 750; proximaFaixaLabel = 'Excelente'; }
+        if (area.tri >= 750) { metaProximaFaixa = 850; proximaFaixaLabel = 'Excepcional'; }
+
+        const pontosNecessarios = Math.max(0, Math.round(metaProximaFaixa - area.tri));
 
         studyPlan.push({
           area: area.code,
@@ -6817,34 +6903,55 @@ Para cada disciplina:
           tri_atual: area.tri,
           tri_faixa: triFaixa,
           conteudos_prioritarios: conteudos || [],
-          listas_recomendadas: (listas || []).map(l => ({
+          // Listas disponíveis (para manter compatibilidade)
+          listas_recomendadas: listasDisponiveis.map(l => ({
             id: l.id,
             titulo: l.titulo,
             ordem: l.ordem,
             arquivo_url: l.arquivo_url,
             arquivo_nome: l.arquivo_nome,
-            arquivo_tipo: l.arquivo_tipo
+            arquivo_tipo: l.arquivo_tipo,
+            status: l.status,
+            tri_min: l.tri_min,
+            tri_max: l.tri_max
           })),
-          meta_proxima_faixa: metaProximaFaixa
+          // Próximas listas bloqueadas (incentivo para evoluir)
+          listas_proximas: listasProximas.map(l => ({
+            id: l.id,
+            titulo: l.titulo,
+            tri_min: l.tri_min,
+            tri_max: l.tri_max,
+            pontos_para_desbloquear: l.pontos_para_desbloquear
+          })),
+          meta_proxima_faixa: {
+            pontos_necessarios: pontosNecessarios,
+            proxima_faixa: proximaFaixaLabel
+          }
         });
       }
 
-      // 4. Salvar/Atualizar plano no banco (para histórico)
-      for (const plan of studyPlan) {
-        await supabaseAdmin
-          .from("student_study_plans")
-          .upsert({
-            student_id: studentId,
-            exam_id: examId,
-            area: plan.area,
-            tri_atual: plan.tri_atual,
-            tri_faixa: plan.tri_faixa,
-            conteudos_prioritarios: plan.conteudos_prioritarios,
-            listas_recomendadas: plan.listas_recomendadas.map(l => l.id),
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'student_id,exam_id,area'
-          });
+      // 4. Salvar/Atualizar plano no banco (para histórico) - opcional
+      try {
+        for (const plan of studyPlan) {
+          await supabaseAdmin
+            .from("student_study_plans")
+            .upsert({
+              student_id: studentId,
+              student_number: studentResult.student_number,
+              exam_id: examId,
+              area: plan.area,
+              tri_atual: plan.tri_atual,
+              tri_faixa: plan.tri_faixa,
+              conteudos_prioritarios: plan.conteudos_prioritarios,
+              listas_recomendadas: plan.listas_recomendadas.map(l => l.id),
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'student_id,exam_id,area'
+            });
+        }
+      } catch (saveError) {
+        // Ignorar erro de salvar histórico - não é crítico
+        console.log("[STUDY_PLAN] Aviso: Não foi possível salvar histórico do plano");
       }
 
       res.json({
