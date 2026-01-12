@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { School, GraduationCap, FileText, Settings, Building2, ChevronLeft, Loader2 } from "lucide-react";
+import { authFetch } from "@/lib/authFetch";
 
 export type AppMode = "selector" | "escola" | "enem";
 
@@ -40,7 +41,7 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
   useEffect(() => {
     if (step === "school") {
       setLoadingSchools(true);
-      fetch("/api/schools")
+      authFetch("/api/schools")
         .then((res) => res.json())
         .then((data) => {
           if (data.schools) {
@@ -57,7 +58,7 @@ export function ModeSelector({ onSelect }: ModeSelectorProps) {
     if (selectedSchoolId) {
       setLoadingExams(true);
       setSelectedExamId("");
-      fetch(`/api/exams?school_id=${selectedSchoolId}`)
+      authFetch(`/api/exams?school_id=${selectedSchoolId}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.exams) {

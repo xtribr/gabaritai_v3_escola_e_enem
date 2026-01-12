@@ -9,13 +9,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar dependências do sistema para OpenCV e pdf2image
+# Instalar dependências do sistema para OpenCV, pdf2image e pyzbar
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
+    libzbar0 \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
@@ -27,6 +28,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código da aplicação
 COPY app.py .
 COPY template_calibration.json .
+COPY xtri_gabarito_reader.py .
+COPY qr_reader_module.py .
 
 # Criar usuário não-root
 RUN useradd --create-home --shell /bin/bash appuser && \

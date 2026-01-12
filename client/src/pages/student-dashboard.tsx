@@ -1,4 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
+import { authFetch } from '@/lib/authFetch';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -386,7 +387,7 @@ export default function StudentDashboard() {
 
       try {
         setLoading(true);
-        const response = await fetch(`/api/student-answers/${profile.id}`);
+        const response = await authFetch(`/api/student-answers/${profile.id}`);
         const data = await response.json();
 
         if (data.success) {

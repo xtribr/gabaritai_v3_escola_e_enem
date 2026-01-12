@@ -82,8 +82,11 @@ COPY --from=builder /app/dist ./dist
 # Copiar dados TRI necessários para cálculo de notas ENEM
 COPY tri/ ./tri/
 
-# Copiar templates de gabarito e criar diretório data
-COPY data/Modelo-de-gabarito.pdf ./data/
+# Copiar assets (logos, imagens) e ajustar permissões
+COPY server/assets/ ./assets/
+RUN chmod -R 644 ./assets/* && chown -R expressjs:nodejs ./assets
+
+# Criar diretório data para templates (PDF gerado dinamicamente)
 RUN mkdir -p ./data && chown -R expressjs:nodejs ./data
 
 # Definir usuário não-root

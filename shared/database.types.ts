@@ -39,6 +39,7 @@ export interface StudentAnswer {
   id: string;
   exam_id: string;
   student_id: string | null;
+  student_record_id: string | null; // Referência à tabela students
   school_id: string;
   student_name: string;
   student_number: string | null;
@@ -56,6 +57,22 @@ export interface StudentAnswer {
   tri_mt: number | null;
   confidence: number | null;
   created_at: string;
+}
+
+/**
+ * Aluno importado via CSV
+ * Independente do auth.users do Supabase
+ */
+export interface Student {
+  id: string;
+  school_id: string;
+  matricula: string;
+  name: string;
+  turma: string | null;
+  sheet_code: string | null; // Código único do QR Code (XTRI-XXXXXX)
+  profile_id: string | null; // Vinculado quando aluno cria conta
+  created_at: string;
+  updated_at: string;
 }
 
 // =====================================================

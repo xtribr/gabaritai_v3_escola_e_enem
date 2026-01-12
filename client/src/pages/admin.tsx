@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { authFetch } from '@/lib/authFetch';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -164,7 +165,7 @@ export default function AdminPage() {
   const fetchSchools = useCallback(async () => {
     setIsLoadingSchools(true);
     try {
-      const response = await fetch('/api/schools');
+      const response = await authFetch('/api/schools');
       const data = await response.json();
       if (data.success) {
         setSchools(data.schools);
@@ -180,7 +181,7 @@ export default function AdminPage() {
   const fetchTurmasForSchool = useCallback(async (schoolId: string) => {
     setIsLoadingTurmas(true);
     try {
-      const response = await fetch(`/api/admin/turmas?school_id=${schoolId}`);
+      const response = await authFetch(`/api/admin/turmas?school_id=${schoolId}`);
       const data = await response.json();
       if (data.success) {
         setTurmasList(data.turmas);
@@ -196,7 +197,7 @@ export default function AdminPage() {
   const fetchTurmaAlunos = useCallback(async (turmaNome: string, schoolId: string) => {
     setIsLoadingTurmaAlunos(true);
     try {
-      const response = await fetch(`/api/admin/turmas/${encodeURIComponent(turmaNome)}/alunos?school_id=${schoolId}`);
+      const response = await authFetch(`/api/admin/turmas/${encodeURIComponent(turmaNome)}/alunos?school_id=${schoolId}`);
       const data = await response.json();
       if (data.success) {
         setTurmaAlunos(data.alunos);
@@ -212,7 +213,7 @@ export default function AdminPage() {
   const handleGenerateGabaritos = async (turmaNome: string, schoolId: string) => {
     setGeneratingPdfForTurma(turmaNome); // Marca qual turma está gerando
     try {
-      const response = await fetch('/api/admin/generate-gabaritos', {
+      const response = await authFetch('/api/admin/generate-gabaritos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ turma: turmaNome, school_id: schoolId }),
@@ -244,7 +245,7 @@ export default function AdminPage() {
   const fetchSimuladosForSchool = useCallback(async (schoolId: string) => {
     setIsLoadingSimulados(true);
     try {
-      const response = await fetch(`/api/simulados?school_id=${schoolId}`);
+      const response = await authFetch(`/api/simulados?school_id=${schoolId}`);
       const data = await response.json();
       if (data.success) {
         setSimulados(data.simulados);
@@ -274,7 +275,7 @@ export default function AdminPage() {
         params.append('search', searchTerm);
       }
 
-      const response = await fetch(`/api/admin/students?${params}`);
+      const response = await authFetch(`/api/admin/students?${params}`);
       const data: StudentsResponse = await response.json();
 
       if (data.success) {
@@ -380,7 +381,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch(`/api/schools/${schoolToDelete.id}`, {
+      const response = await authFetch(`/api/schools/${schoolToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -407,7 +408,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch(`/api/simulados/${simuladoToDelete.id}`, {
+      const response = await authFetch(`/api/simulados/${simuladoToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -433,7 +434,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch(`/api/admin/students/${studentToDelete.id}`, {
+      const response = await authFetch(`/api/admin/students/${studentToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -460,7 +461,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch('/api/admin/reset-password', {
+      const response = await authFetch('/api/admin/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -492,7 +493,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch('/api/admin/turmas', {
+      const response = await authFetch('/api/admin/turmas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -523,7 +524,7 @@ export default function AdminPage() {
 
     setIsActionLoading(true);
     try {
-      const response = await fetch('/api/admin/students', {
+      const response = await authFetch('/api/admin/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -622,7 +623,7 @@ export default function AdminPage() {
         setImportProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      const response = await fetch('/api/admin/import-students', {
+      const response = await authFetch('/api/admin/import-students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

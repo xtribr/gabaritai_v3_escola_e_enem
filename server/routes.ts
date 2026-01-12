@@ -17,6 +17,16 @@ import { registerDebugRoutes } from "./debugRoutes.js";
 import { gerarAnaliseDetalhada } from "./conteudosLoader.js";
 import { storage } from "./storage.js";
 import { supabaseAdmin } from "./lib/supabase.js";
+import {
+  parseStudentCSV,
+  createAnswerSheetBatch,
+  generateBatchPDF,
+  generateSheetCode,
+  getBatchById,
+  getStudentsByBatchId,
+  getStudentBySheetCode,
+  updateStudentAnswers,
+} from "./src/answerSheetBatch.js";
 import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
 import {
   transformStudentsForSupabase,
@@ -124,6 +134,61 @@ async function callPythonOMR(imageBuffer: Buffer, pageNumber: number, config: st
     }
     if (error.code === 'ENOTFOUND') {
       throw new Error(`Host não encontrado: ${PYTHON_OMR_SERVICE_URL}. Verifique a URL.`);
+    }
+    throw new Error(`Erro de conexão com OMR: ${error.message || error}`);
+  }
+}
+
+/**
+ * Chama o serviço Python OMR com leitura de QR Code
+ * Usa o endpoint /api/process-sheet que lê QR + OMR + busca aluno no Supabase
+ */
+async function callPythonOMRWithQR(imageBuffer: Buffer, pageNumber: number): Promise<{
+  status: string;
+  sheet_code?: string;
+  student?: {
+    student_name: string | null;
+    enrollment: string | null;
+    class_name: string | null;
+    exam_id: string | null;
+  } | null;
+  answers?: (string | null)[];
+  stats?: {
+    answered: number;
+    blank: number;
+    double_marked: number;
+  };
+  timings?: Record<string, number>;
+  saved?: boolean;
+  code?: string;
+  message?: string;
+}> {
+  try {
+    const axios = (await import("axios")).default;
+    const FormData = (await import("form-data")).default;
+    const formData = new FormData();
+
+    formData.append("image", imageBuffer, {
+      filename: `page_${pageNumber}.png`,
+      contentType: "image/png",
+    });
+
+    const omrUrl = `${PYTHON_OMR_SERVICE_URL}/api/process-sheet`;
+    console.log(`[Python OMR+QR] Enviando imagem de ${imageBuffer.length} bytes para página ${pageNumber}...`);
+
+    const response = await axios.post(omrUrl, formData, {
+      timeout: 120000,
+      headers: formData.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    return response.data;
+  } catch (error: any) {
+    console.error(`[Python OMR+QR] ❌ ERRO:`, error.message || error);
+    if (error.response?.data) {
+      // Retornar erro da API para tratamento
+      return error.response.data;
     }
     throw new Error(`Erro de conexão com OMR: ${error.message || error}`);
   }
@@ -762,34 +827,71 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           await fs.unlink(`${tempPngPath}.png`).catch(() => {});
         }
 
-        // PASSO 3: Processar OMR
-        console.log(`\n[JOB ${jobId}] ━━━ PASSO 3/5: OMR - PÁGINA ${pageNumber} ━━━`);
-        
-        let omrResult;
-        let pythonHeader: { nome: string | null; turma: string | null; matricula: string | null } | undefined;
+        // PASSO 3: Processar OMR + QR Code
+        console.log(`\n[JOB ${jobId}] ━━━ PASSO 3/5: OMR + QR CODE - PÁGINA ${pageNumber} ━━━`);
+
+        let mergedAnswers: Array<string | null> = [];
+        let scanQualityWarnings: string[] = [];
+        let overallConfidence = 0.7;
+        let studentTurma: string | undefined;
 
         if (usePythonOMR) {
           try {
-            console.log(`[JOB ${jobId}] 🔵 Chamando Python OMR para página ${pageNumber}...`);
+            console.log(`[JOB ${jobId}] 🔵 Chamando Python OMR + QR para página ${pageNumber}...`);
             const startOMR = Date.now();
-            // Determinar config baseado no template
-            const omrConfig = template === "modelo_menor" ? "modelo_menor" : "default";
-            const pythonResult = await callPythonOMRWithRetry(imageBuffer, pageNumber, omrConfig);
 
-            omrResult = convertPythonOMRToInternal(pythonResult, officialGabaritoTemplate.totalQuestions);
+            // 🆕 Usar endpoint que lê QR Code + OMR
+            const qrResult = await callPythonOMRWithQR(imageBuffer, pageNumber);
             const omrDuration = Date.now() - startOMR;
 
-            // 🆕 Extrair header do Python OMR (Tesseract OCR)
-            pythonHeader = pythonResult.pagina?.header;
+            if (qrResult.status === "sucesso" && qrResult.answers) {
+              // Sucesso: QR lido + OMR processado
+              mergedAnswers = qrResult.answers.map(a => a || null);
+              const stats = qrResult.stats || { answered: 0, blank: 90, double_marked: 0 };
 
-            if (pythonResult.status === "sucesso" && pythonResult.pagina) {
-              const detected = omrResult.detectedAnswers.filter(a => a).length;
-              console.log(`[JOB ${jobId}] ✅ Python OMR (${omrConfig}): ${detected}/90 respostas detectadas (${omrDuration}ms)`);
-              if (pythonHeader) {
-                console.log(`[JOB ${jobId}] 📋 Header OCR: nome="${pythonHeader.nome}", turma="${pythonHeader.turma}", matricula="${pythonHeader.matricula}"`);
+              console.log(`[JOB ${jobId}] ✅ QR+OMR: ${stats.answered}/90 respostas (${omrDuration}ms)`);
+
+              // Extrair dados do aluno do QR Code
+              if (qrResult.sheet_code) {
+                studentNumber = qrResult.sheet_code;
+                console.log(`[JOB ${jobId}] 📋 Sheet Code: ${qrResult.sheet_code}`);
               }
+
+              if (qrResult.student) {
+                if (qrResult.student.student_name) {
+                  studentName = qrResult.student.student_name;
+                  console.log(`[JOB ${jobId}] 👤 Nome: ${studentName}`);
+                }
+                if (qrResult.student.enrollment) {
+                  studentNumber = qrResult.student.enrollment;
+                  console.log(`[JOB ${jobId}] 🎫 Matrícula: ${studentNumber}`);
+                }
+                if (qrResult.student.class_name) {
+                  studentTurma = qrResult.student.class_name;
+                  console.log(`[JOB ${jobId}] 🏫 Turma: ${studentTurma}`);
+                }
+              }
+
+              // Calcular confiança
+              overallConfidence = stats.answered > 0 ? 0.70 + (stats.answered / 90) * 0.28 : 0.40;
+
+            } else if (qrResult.code === "QR_NOT_FOUND") {
+              // QR não encontrado - usar fallback para OMR simples
+              console.warn(`[JOB ${jobId}] ⚠️ QR Code não encontrado, usando OMR simples...`);
+
+              const omrConfig = template === "modelo_menor" ? "modelo_menor" : "default";
+              const pythonResult = await callPythonOMRWithRetry(imageBuffer, pageNumber, omrConfig);
+              const omrResultInternal = convertPythonOMRToInternal(pythonResult, officialGabaritoTemplate.totalQuestions);
+
+              mergedAnswers = [...omrResultInternal.detectedAnswers];
+              overallConfidence = omrResultInternal.overallConfidence;
+
+              const detected = mergedAnswers.filter(a => a).length;
+              console.log(`[JOB ${jobId}] ✅ OMR Fallback: ${detected}/90 respostas`);
+              scanQualityWarnings.push("QR Code não detectado - aluno não identificado");
+
             } else {
-              throw new Error(pythonResult.mensagem || "Erro desconhecido no serviço Python OMR");
+              throw new Error(qrResult.message || "Erro desconhecido no serviço Python OMR");
             }
           } catch (pythonError) {
             console.error(`[JOB ${jobId}] ❌ Erro no Python OMR:`, pythonError);
@@ -799,154 +901,42 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           throw new Error(`Serviço Python OMR não disponível. Execute: cd python_omr_service && python app.py`);
         }
 
-        // 🔥 OMR ULTRA + GPT VISION AUDITORIA
-        let mergedAnswers: Array<string | null> = [...omrResult.detectedAnswers];
-        let scanQualityWarnings: string[] = [];
-
-        // 🤖 AUDITORIA GPT VISION: Valida e corrige respostas do OMR
-        if (enableOcr && process.env.OPENAI_API_KEY) {
-          try {
-            console.log(`[JOB ${jobId}] 🤖 Auditoria GPT Vision das respostas...`);
-            const gptAudit = await callChatGPTVisionOMR(
-              imageBuffer,
-              officialGabaritoTemplate.totalQuestions,
-              omrResult.detectedAnswers
-            );
-
-            // Aplicar correções do GPT
-            if (gptAudit.corrections && gptAudit.corrections.length > 0) {
-              console.log(`[JOB ${jobId}] 🔧 GPT encontrou ${gptAudit.corrections.length} correções:`);
-              for (const corr of gptAudit.corrections) {
-                console.log(`[JOB ${jobId}]   - Q${corr.q}: "${corr.omr}" → "${corr.corrected}" (${corr.reason || 'sem motivo'})`);
-                if (corr.q >= 1 && corr.q <= mergedAnswers.length) {
-                  mergedAnswers[corr.q - 1] = corr.corrected;
-                }
-              }
-            } else {
-              console.log(`[JOB ${jobId}] ✅ GPT confirmou respostas do OMR (sem correções)`);
-            }
-
-            // Alertas de qualidade do scan
-            if (gptAudit.scanQuality) {
-              console.log(`[JOB ${jobId}] 📊 Qualidade scan: ${gptAudit.scanQuality.quality}`);
-              if (gptAudit.scanQuality.issues && gptAudit.scanQuality.issues.length > 0) {
-                scanQualityWarnings = gptAudit.scanQuality.issues;
-                console.warn(`[JOB ${jobId}] ⚠️ Problemas: ${scanQualityWarnings.join(', ')}`);
-              }
-            }
-          } catch (gptError) {
-            console.warn(`[JOB ${jobId}] ⚠️ Erro na auditoria GPT (usando apenas OMR):`, gptError);
-          }
-        }
-        
         // PASSO 4: VALIDAÇÃO DAS RESPOSTAS
-        console.log(`\n[JOB ${jobId}] ━━━ PASSO 4/5: OMR ULTRA - VALIDAÇÃO (PÁGINA ${pageNumber}) ━━━`);
-        
+        console.log(`\n[JOB ${jobId}] ━━━ PASSO 4/5: VALIDAÇÃO (PÁGINA ${pageNumber}) ━━━`);
+
         const expectedLength = officialGabaritoTemplate.totalQuestions;
-        const omrLength = omrResult.detectedAnswers.length;
-        
-        console.log(`[JOB ${jobId}] 📊 RESULTADO OMR ULTRA:`);
+        const omrLength = mergedAnswers.length;
+
+        console.log(`[JOB ${jobId}] 📊 RESULTADO:`);
         console.log(`[JOB ${jobId}]   - Esperado: ${expectedLength} questões`);
         console.log(`[JOB ${jobId}]   - Detectadas: ${omrLength} respostas`);
-        console.log(`[JOB ${jobId}]   - Respondidas: ${omrResult.detectedAnswers.filter(a => a).length}/90`);
-        
+        console.log(`[JOB ${jobId}]   - Respondidas: ${mergedAnswers.filter(a => a).length}/90`);
+
         // Validar tamanho
         if (omrLength !== expectedLength) {
           const warningMsg = `OMR retornou ${omrLength} respostas, ajustando para ${expectedLength}.`;
           console.warn(`[JOB ${jobId}] ⚠️ ${warningMsg}`);
-          // Preencher com nulls se faltar
-          while (omrResult.detectedAnswers.length < expectedLength) {
-            omrResult.detectedAnswers.push(null);
+          while (mergedAnswers.length < expectedLength) {
+            mergedAnswers.push(null);
           }
-          mergedAnswers = omrResult.detectedAnswers.slice(0, expectedLength);
+          mergedAnswers = mergedAnswers.slice(0, expectedLength);
         }
-        
+
         // Log das primeiras 10 questões para debug
         const first10 = mergedAnswers.slice(0, 10).map((ans, idx) => `Q${idx + 1}="${ans || '-'}"`).join(", ");
         console.log(`[JOB ${jobId}] 📋 Primeiras 10: ${first10}`);
-        
-        console.log(`[JOB ${jobId}] ✅ OMR Ultra concluído para página ${pageNumber}`);
-        console.log(`[JOB ${jobId}] 🔥 OMR: OpenCV | Header: GPT Vision`);
 
-        // 🆕 Abordagem Híbrida: GPT Vision para header (mais preciso que Tesseract)
-        let studentTurma: string | undefined;
+        console.log(`[JOB ${jobId}] ✅ Processamento concluído para página ${pageNumber}`);
+        console.log(`[JOB ${jobId}] 🔥 Método: QR Code + OMR OpenCV`);
 
-        if (enableOcr && process.env.OPENAI_API_KEY) {
-          try {
-            console.log(`[JOB ${jobId}] 🤖 Extraindo header com GPT Vision...`);
-            const headerResult = await extractHeaderInfoWithGPT(imageBuffer);
+        // Converter respostas para formato final (string vazia para null)
+        const finalAnswers = mergedAnswers.map(ans => ans ?? "");
 
-            if (headerResult.name) {
-              studentName = headerResult.name.substring(0, 100);
-              console.log(`[JOB ${jobId}] ✅ Nome (GPT): "${studentName}"`);
-            }
-
-            if (headerResult.studentNumber) {
-              studentNumber = headerResult.studentNumber.substring(0, 20);
-              console.log(`[JOB ${jobId}] ✅ Matrícula (GPT): "${studentNumber}"`);
-            }
-
-            if (headerResult.turma) {
-              studentTurma = headerResult.turma;
-              console.log(`[JOB ${jobId}] ✅ Turma (GPT): "${studentTurma}"`);
-            }
-          } catch (gptError) {
-            console.warn(`[JOB ${jobId}] ⚠️ Erro GPT Vision header:`, gptError);
-          }
-        } else {
-          console.log(`[JOB ${jobId}] ⚠️ OCR desativado ou OPENAI_API_KEY não configurada`);
-        }
-
-        // VALIDAÇÃO FINAL ANTES DE CRIAR finalAnswers
-        if (mergedAnswers.length !== officialGabaritoTemplate.totalQuestions) {
-          const errorMsg = `ERRO CRÍTICO: mergedAnswers tem tamanho incorreto (${mergedAnswers.length}) antes de criar finalAnswers. Esperado: ${officialGabaritoTemplate.totalQuestions}. Página ${pageNumber}.`;
-          console.error(`[JOB ${jobId}] ❌ ${errorMsg}`);
-          job.warnings.push(errorMsg);
-          // Garantir tamanho correto
-          while (mergedAnswers.length < officialGabaritoTemplate.totalQuestions) {
-            mergedAnswers.push(null);
-          }
-          mergedAnswers = mergedAnswers.slice(0, officialGabaritoTemplate.totalQuestions);
-        }
-        
-        const finalAnswers = mergedAnswers.map((ans, idx) => {
-          const questionNum = idx + 1;
-          // Log questões vazias nas primeiras 10 para debug
-          if (ans === null && questionNum <= 10) {
-            console.log(`[JOB ${jobId}] ⚠️  Q${questionNum} será salva como string vazia (era null)`);
-          }
-          
-          // VALIDAÇÃO ESPECIAL PARA Q3: Se está vazia, verificar se OMR detectou algo
-          if (questionNum === 3 && ans === null) {
-            const omrQ3 = omrResult.detectedAnswers[2]; // Índice 2 = questão 3
-            if (omrQ3) {
-              console.warn(`[JOB ${jobId}] ⚠️  Q3 está NULL mas OMR detectou "${omrQ3}". Usando valor do OMR.`);
-              return omrQ3; // Usar valor do OMR se ChatGPT retornou null
-            }
-          }
-          
-          return (ans ?? "");
-        });
-        
-        // VALIDAÇÃO FINAL ESPECÍFICA PARA Q3
-        if (finalAnswers.length > 2 && finalAnswers[2] === "") {
-          const omrQ3 = omrResult.detectedAnswers[2];
-          if (omrQ3) {
-            console.warn(`[JOB ${jobId}] ⚠️  Q3 está vazia no finalAnswers mas OMR detectou "${omrQ3}". Corrigindo...`);
-            finalAnswers[2] = omrQ3;
-          }
-        }
-        
-        // AUDITORIA FINAL: Verificar se todas as questões foram processadas
+        // AUDITORIA FINAL
         const finalAnswered = finalAnswers.filter(a => a !== "").length;
-        console.log(`[JOB ${jobId}] ✅ finalAnswers criado: ${finalAnswered}/${officialGabaritoTemplate.totalQuestions} questões respondidas (página ${pageNumber})`);
-        
-        // Log específico da Q3 no final
-        if (finalAnswers.length > 2) {
-          console.log(`[JOB ${jobId}] 🔍 Q3 FINAL: "${finalAnswers[2] || 'VAZIA'}" (página ${pageNumber})`);
-        }
+        console.log(`[JOB ${jobId}] ✅ finalAnswers: ${finalAnswered}/${officialGabaritoTemplate.totalQuestions} questões (página ${pageNumber})`);
 
-        // Montar texto de qualidade (sem GPT)
+        // Montar texto de qualidade
         const qualityInfo: string[] = [];
         if (scanQualityWarnings.length > 0) {
           qualityInfo.push(`⚠️ ${scanQualityWarnings.join(" | ")}`);
@@ -959,19 +949,17 @@ async function processPdfJob(jobId: string, fileBuffer: Buffer, enableOcr: boole
           turma: studentTurma,
           answers: finalAnswers,
           pageNumber,
-          confidence: Math.round(omrResult.overallConfidence * 100),
-          rawText: qualityInfo.length > 0
-            ? qualityInfo.join(" | ")
-            : (omrResult.warnings.length > 0 ? omrResult.warnings.join("; ") : undefined),
+          confidence: Math.round(overallConfidence * 100),
+          rawText: qualityInfo.length > 0 ? qualityInfo.join(" | ") : undefined,
         };
 
-        // Retornar dados para o console do frontend (sem GPT)
-        return { 
-          student, 
-          warnings: omrResult.warnings.slice(0, 5),
+        // Retornar dados para o console do frontend
+        return {
+          student,
+          warnings: scanQualityWarnings,
           pageResult: {
             detectedAnswers: mergedAnswers,
-            overallConfidence: omrResult.overallConfidence,
+            overallConfidence,
           }
         };
       } catch (pageError) {
@@ -1084,7 +1072,8 @@ export async function registerRoutes(
   registerDebugRoutes(app);
   
   // Start PDF processing - returns jobId immediately
-  app.post("/api/process-pdf", upload.single("pdf"), async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode processar PDFs (funcionalidade ENEM/XTRI)
+  app.post("/api/process-pdf", requireAuth, requireRole('super_admin'), upload.single("pdf"), async (req: Request, res: Response) => {
     try {
       console.log("[UPLOAD] Recebendo arquivo...");
       
@@ -1157,7 +1146,8 @@ export async function registerRoutes(
   });
 
   // Endpoint de debug - Testa OMR Ultra
-  app.post("/api/debug-omr", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode testar OMR
+  app.post("/api/debug-omr", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       console.log("🔧 DEBUG OMR Ultra: Iniciando teste...");
 
@@ -1184,7 +1174,8 @@ export async function registerRoutes(
   });
 
   // Get job status for polling
-  app.get("/api/process-pdf/:jobId/status", (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas usuários autenticados podem verificar status
+  app.get("/api/process-pdf/:jobId/status", requireAuth, (req: Request, res: Response) => {
     const { jobId } = req.params;
     const job = jobs.get(jobId);
 
@@ -1206,7 +1197,8 @@ export async function registerRoutes(
   });
 
   // Get job results
-  app.get("/api/process-pdf/:jobId/results", (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas usuários autenticados podem ver resultados
+  app.get("/api/process-pdf/:jobId/results", requireAuth, (req: Request, res: Response) => {
     const { jobId } = req.params;
     const job = jobs.get(jobId);
 
@@ -1223,7 +1215,8 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/export-excel", async (req: Request, res: Response) => {
+  // PROTEGIDO: Exportação de Excel requer autenticação
+  app.post("/api/export-excel", requireAuth, async (req: Request, res: Response) => {
     try {
       const { students, answerKey, questionContents, statistics, includeTRI, triScores, triScoresByArea } = req.body as {
         students: StudentData[];
@@ -1289,7 +1282,8 @@ export async function registerRoutes(
 
   // Generate personalized PDFs from CSV
   // For large files (>50 students), generates multiple smaller PDFs with download links
-  app.post("/api/generate-pdfs", uploadCsv.single("csv"), async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem gerar PDFs
+  app.post("/api/generate-pdfs", requireAuth, requireRole('super_admin', 'school_admin'), uploadCsv.single("csv"), async (req: Request, res: Response) => {
     try {
       console.log("[GENERATE-PDF] Iniciando geração de PDFs personalizados...");
       const startTime = Date.now();
@@ -1666,6 +1660,79 @@ export async function registerRoutes(
 
   app.get("/api/health", (req: Request, res: Response) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // ⚠️ ENDPOINT TEMPORÁRIO - Promover xandao@gmail.com para super_admin
+  // REMOVER APÓS USO!
+  app.get("/api/fix-admin-xandao", async (req: Request, res: Response) => {
+    try {
+      const targetEmail = "xandao@gmail.com";
+
+      // Buscar profile pelo email
+      const { data: profile, error: fetchError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("email", targetEmail)
+        .single();
+
+      if (fetchError || !profile) {
+        // Se não existe profile, buscar usuário auth e criar profile
+        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const authUser = authUsers?.users?.find(u => u.email === targetEmail);
+
+        if (!authUser) {
+          return res.status(404).json({
+            error: "Usuário não encontrado no Auth nem no Profiles",
+            email: targetEmail
+          });
+        }
+
+        // Criar profile para o usuário auth existente
+        const { error: createError } = await supabaseAdmin
+          .from("profiles")
+          .insert({
+            id: authUser.id,
+            email: targetEmail,
+            name: "Admin XTRI",
+            role: "super_admin"
+          });
+
+        if (createError) {
+          return res.status(500).json({ error: createError.message });
+        }
+
+        return res.json({
+          success: true,
+          action: "created",
+          message: "Profile criado como super_admin",
+          userId: authUser.id
+        });
+      }
+
+      // Atualizar role para super_admin
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: "super_admin" })
+        .eq("email", targetEmail);
+
+      if (updateError) {
+        return res.status(500).json({ error: updateError.message });
+      }
+
+      res.json({
+        success: true,
+        action: "updated",
+        message: "Role atualizada para super_admin",
+        user: {
+          id: profile.id,
+          email: profile.email,
+          oldRole: profile.role,
+          newRole: "super_admin"
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Endpoint TRI V2 - Status/Info (GET)
@@ -3000,7 +3067,8 @@ Para cada disciplina:
 
   // POST /api/avaliacoes - Salvar avaliação
   // GAB-201: POST /api/avaliacoes - Salvar avaliação no Supabase
-  app.post("/api/avaliacoes", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem salvar avaliações
+  app.post("/api/avaliacoes", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const {
         titulo,
@@ -3158,7 +3226,8 @@ Para cada disciplina:
   });
 
   // GAB-201: GET /api/avaliacoes - Listar avaliações do Supabase
-  app.get("/api/avaliacoes", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem listar avaliações
+  app.get("/api/avaliacoes", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id } = req.query;
 
@@ -3231,7 +3300,8 @@ Para cada disciplina:
   });
 
   // GAB-201: GET /api/avaliacoes/:id - Buscar avaliação específica do Supabase
-  app.get("/api/avaliacoes/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem ver avaliações
+  app.get("/api/avaliacoes/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3291,7 +3361,8 @@ Para cada disciplina:
   });
 
   // GAB-201: DELETE /api/avaliacoes/:id - Deletar avaliação do Supabase
-  app.delete("/api/avaliacoes/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins podem deletar avaliações
+  app.delete("/api/avaliacoes/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3374,7 +3445,8 @@ Para cada disciplina:
   }
 
   // POST /api/projetos - Salvar novo projeto
-  app.post("/api/projetos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode gerenciar projetos
+  app.post("/api/projetos", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const {
         nome,
@@ -3436,7 +3508,8 @@ Para cada disciplina:
   });
 
   // GET /api/projetos - Listar todos os projetos
-  app.get("/api/projetos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode ver projetos
+  app.get("/api/projetos", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
         .from('projetos')
@@ -3475,7 +3548,8 @@ Para cada disciplina:
   });
 
   // GET /api/projetos/:id - Carregar projeto específico
-  app.get("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode ver projetos
+  app.get("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3508,7 +3582,8 @@ Para cada disciplina:
   });
 
   // PUT /api/projetos/:id - Atualizar projeto (usado para merge Dia1+Dia2)
-  app.put("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode atualizar projetos
+  app.put("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const {
@@ -3725,7 +3800,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/projetos/:id - Deletar projeto
-  app.delete("/api/projetos/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode deletar projetos
+  app.delete("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -4026,9 +4102,13 @@ Para cada disciplina:
     return `${matricula}@${schoolSlug}.gabaritai.com`;
   }
 
-  // POST /api/admin/import-students - Importar alunos em lote
+  // POST /api/admin/import-students - Importar alunos em lote (TABELA STUDENTS)
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // ✅ NOVA ABORDAGEM: Insere na tabela 'students' separada do auth.users
+  // Alunos podem criar conta posteriormente para acessar dashboard
+  // v2 - 2024-01-11 - Usando tabela students
   app.post("/api/admin/import-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    console.log("[IMPORT v2] Iniciando importação na tabela STUDENTS");
     try {
       const { students, schoolId } = req.body as {
         students: ImportStudentInput[];
@@ -4038,12 +4118,20 @@ Para cada disciplina:
       if (!students || !Array.isArray(students) || students.length === 0) {
         res.status(400).json({
           error: "Lista de alunos é obrigatória",
-          details: "Envie um array de objetos com matricula, nome, turma e email (opcional)"
+          details: "Envie um array de objetos com matricula, nome, turma"
         });
         return;
       }
 
-      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s)...`);
+      if (!schoolId) {
+        res.status(400).json({
+          error: "schoolId é obrigatório",
+          details: "Especifique a escola para importar os alunos"
+        });
+        return;
+      }
+
+      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s) para escola ${schoolId}...`);
 
       const results: ImportStudentResult[] = [];
       let created = 0;
@@ -4051,133 +4139,89 @@ Para cada disciplina:
       let errors = 0;
 
       for (const student of students) {
-        const { matricula, nome, turma, email: providedEmail } = student;
+        const { matricula, nome, turma } = student;
 
         // Validação básica
-        if (!matricula || !nome || !turma) {
+        if (!matricula || !nome) {
           results.push({
             matricula: matricula || 'N/A',
             nome: nome || 'N/A',
             turma: turma || 'N/A',
-            email: providedEmail || 'N/A',
+            email: '',
             senha: '',
             status: 'error',
-            message: 'Campos obrigatórios faltando (matricula, nome, turma)'
+            message: 'Campos obrigatórios faltando (matricula, nome)'
           });
           errors++;
           continue;
         }
 
-        // Gerar email se não fornecido
-        const email = providedEmail || generateEmail(matricula);
-        const senha = generatePassword(matricula);
-
         try {
-          // Verificar se já existe um profile com essa matrícula
-          const { data: existingProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('id, email')
-            .eq('student_number', matricula)
+          // Verificar se já existe um aluno com essa matrícula na escola
+          const { data: existingStudent } = await supabaseAdmin
+            .from('students')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('matricula', matricula)
             .maybeSingle();
 
-          if (existingProfile) {
-            // Atualizar profile existente
+          if (existingStudent) {
+            // Atualizar aluno existente
             const { error: updateError } = await supabaseAdmin
-              .from('profiles')
+              .from('students')
               .update({
                 name: nome,
-                turma: turma,
-                school_id: schoolId || null
+                turma: turma || null
               })
-              .eq('id', existingProfile.id);
+              .eq('id', existingStudent.id);
 
             if (updateError) {
-              throw new Error(`Erro ao atualizar profile: ${updateError.message}`);
+              throw new Error(`Erro ao atualizar: ${updateError.message}`);
             }
 
             results.push({
               matricula,
               nome,
-              turma,
-              email: existingProfile.email,
-              senha: '(senha mantida)',
+              turma: turma || '',
+              email: '',
+              senha: '',
               status: 'updated',
-              message: 'Dados atualizados (senha não alterada)'
+              message: 'Dados atualizados'
             });
             updated++;
-            console.log(`[IMPORT] Aluno ${matricula} atualizado`);
           } else {
-            // Verificar se já existe usuário com esse email
-            const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-            const existingUser = existingUsers?.users?.find(u => u.email === email);
-
-            let userId: string;
-
-            if (existingUser) {
-              // Usar usuário existente
-              userId = existingUser.id;
-              console.log(`[IMPORT] Usuário ${email} já existe, usando ID existente`);
-            } else {
-              // Criar novo usuário no Supabase Auth
-              const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-                email,
-                password: senha,
-                email_confirm: true, // Confirmar email automaticamente
-                user_metadata: {
-                  name: nome,
-                  role: 'student',
-                  student_number: matricula,
-                  turma: turma
-                }
-              });
-
-              if (authError) {
-                throw new Error(`Erro ao criar usuário: ${authError.message}`);
-              }
-
-              userId = authData.user.id;
-              console.log(`[IMPORT] Usuário criado: ${email}`);
-            }
-
-            // Criar profile
-            const { error: profileError } = await supabaseAdmin
-              .from('profiles')
-              .upsert({
-                id: userId,
-                email,
+            // Criar novo aluno na tabela students
+            const { error: insertError } = await supabaseAdmin
+              .from('students')
+              .insert({
+                school_id: schoolId,
+                matricula,
                 name: nome,
-                role: 'student',
-                student_number: matricula,
-                turma: turma,
-                school_id: schoolId || null,
-                must_change_password: !existingUser // Forçar troca de senha apenas para novos usuários
-              }, {
-                onConflict: 'id'
+                turma: turma || null
               });
 
-            if (profileError) {
-              throw new Error(`Erro ao criar profile: ${profileError.message}`);
+            if (insertError) {
+              throw new Error(`Erro ao criar: ${insertError.message}`);
             }
 
             results.push({
               matricula,
               nome,
-              turma,
-              email,
-              senha: existingUser ? '(usuário já existia)' : senha,
+              turma: turma || '',
+              email: '',
+              senha: '',
               status: 'created',
-              message: existingUser ? 'Profile criado para usuário existente' : 'Aluno criado com sucesso'
+              message: 'Aluno cadastrado'
             });
             created++;
-            console.log(`[IMPORT] Profile criado para ${matricula}`);
           }
         } catch (error: any) {
-          console.error(`[IMPORT] Erro ao processar ${matricula}:`, error.message);
+          console.error(`[IMPORT] Erro ${matricula}:`, error.message);
           results.push({
             matricula,
             nome,
-            turma,
-            email,
+            turma: turma || '',
+            email: '',
             senha: '',
             status: 'error',
             message: error.message
@@ -4186,7 +4230,7 @@ Para cada disciplina:
         }
       }
 
-      console.log(`[IMPORT] Concluído: ${created} criados, ${updated} atualizados, ${errors} erros`);
+      console.log(`[IMPORT] ✅ Concluído: ${created} criados, ${updated} atualizados, ${errors} erros`);
 
       res.json({
         success: errors === 0,
@@ -4196,7 +4240,11 @@ Para cada disciplina:
           updated,
           errors
         },
-        results
+        results,
+        info: {
+          message: "Alunos importados com sucesso!",
+          loginInstructions: "Alunos podem criar conta para acessar resultados via matrícula"
+        }
       });
     } catch (error: any) {
       console.error("[IMPORT] Erro geral:", error);
@@ -4207,7 +4255,7 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/admin/export-credentials - Exportar credenciais dos alunos
+// GET /api/admin/export-credentials - Exportar credenciais dos alunos
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/export-credentials", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4248,26 +4296,31 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/admin/students - Listar alunos com filtros
+  // GET /api/admin/students - Listar alunos de uma escola (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      const { turma, search, page = '1', limit = '50' } = req.query;
+      const { school_id, turma, search, page = '1', limit = '50' } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       let query = supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('*', { count: 'exact' })
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .order('name', { ascending: true });
 
       // Filtro por turma
-      if (turma && typeof turma === 'string') {
+      if (turma && typeof turma === 'string' && turma !== 'all') {
         query = query.eq('turma', turma);
       }
 
       // Busca por nome ou matrícula
       if (search && typeof search === 'string') {
-        query = query.or(`name.ilike.%${search}%,student_number.ilike.%${search}%`);
+        query = query.or(`name.ilike.%${search}%,matricula.ilike.%${search}%`);
       }
 
       // Paginação
@@ -4285,16 +4338,23 @@ Para cada disciplina:
 
       // Buscar lista de turmas únicas para o filtro
       const { data: turmasData } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('turma')
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .not('turma', 'is', null);
 
       const turmas = [...new Set(turmasData?.map(t => t.turma).filter(Boolean))].sort();
 
+      // Mapear para formato esperado pelo frontend (student_number = matricula)
+      const students = (data || []).map(s => ({
+        ...s,
+        student_number: s.matricula,
+        email: `${s.matricula}@escola.gabaritai.com`
+      }));
+
       res.json({
         success: true,
-        students: data || [],
+        students,
         pagination: {
           total: count || 0,
           page: pageNum,
@@ -4304,13 +4364,230 @@ Para cada disciplina:
         turmas
       });
     } catch (error: any) {
-      console.error("[STUDENTS] Erro ao listar:", error);
+      console.error("[GET STUDENTS]", error);
       res.status(500).json({
-        error: "Erro ao listar alunos",
+        error: "Erro ao buscar alunos",
         details: error.message
       });
     }
   });
+
+  // GET /api/admin/students/:schoolId/turmas - Listar turmas de uma escola
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.get("/api/admin/students/:schoolId/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { schoolId } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from('students')
+        .select('turma')
+        .eq('school_id', schoolId)
+        .not('turma', 'is', null);
+
+      if (error) {
+        throw new Error(`Erro ao buscar turmas: ${error.message}`);
+      }
+
+      // Extrair turmas únicas
+      const turmas = [...new Set(data?.map(s => s.turma).filter(Boolean))].sort();
+
+      res.json({
+        success: true,
+        turmas
+      });
+    } catch (error: any) {
+      console.error("[GET TURMAS]", error);
+      res.status(500).json({
+        error: "Erro ao buscar turmas",
+        details: error.message
+      });
+    }
+  });
+
+  // DELETE /api/admin/students/:id - Deletar aluno da tabela students
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Buscar dados do aluno para log
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('matricula, name')
+        .eq('id', id)
+        .single();
+
+      if (!student) {
+        res.status(404).json({ error: "Aluno não encontrado" });
+        return;
+      }
+
+      // Deletar aluno
+      const { error: deleteError } = await supabaseAdmin
+        .from('students')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw new Error(`Erro ao deletar: ${deleteError.message}`);
+      }
+
+      console.log(`[DELETE STUDENT] Aluno ${student.name} (${student.matricula}) deletado`);
+
+      res.json({
+        success: true,
+        message: `Aluno ${student.name} deletado com sucesso`
+      });
+    } catch (error: any) {
+      console.error("[DELETE STUDENT]", error);
+      res.status(500).json({
+        error: "Erro ao deletar aluno",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/students/:id/reset-password - Resetar senha do aluno (Auth)
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  // NOTA: Funciona apenas para alunos que já criaram conta (profile_id linkado)
+  app.post("/api/admin/students/:id/reset-password", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+
+    try {
+      const { id } = req.params;
+
+      // Buscar dados do aluno
+      const { data: student } = await supabaseAdmin
+        .from('profiles')
+        .select('name, student_number, email')
+        .eq('id', id)
+        .single();
+
+      if (!student) {
+        res.status(404).json({ error: "Aluno não encontrado" });
+        return;
+      }
+
+      // Resetar senha no Auth
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+        password: DEFAULT_PASSWORD,
+        user_metadata: {
+          must_change_password: true
+        }
+      });
+
+      if (authError) {
+        throw new Error(`Erro ao resetar senha: ${authError.message}`);
+      }
+
+      console.log(`[RESET] Senha resetada para ${student.name} (${student.student_number})`);
+
+      res.json({
+        success: true,
+        message: `Senha de ${student.name} resetada para ${DEFAULT_PASSWORD}`,
+        student: {
+          id,
+          name: student.name,
+          student_number: student.student_number,
+          email: student.email
+        },
+        newPassword: DEFAULT_PASSWORD,
+        mustChangePassword: true
+      });
+    } catch (error: any) {
+      console.error("[RESET] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao resetar senha",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/admin/students/reset-all-passwords - Resetar senha de TODOS os alunos
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  app.post("/api/admin/students/reset-all-passwords", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 1500;
+
+    try {
+      const { turma, schoolId } = req.body as { turma?: string; schoolId?: string };
+
+      // Buscar alunos (filtrados por turma/escola se especificado)
+      let query = supabaseAdmin
+        .from('profiles')
+        .select('id, name, student_number')
+        .eq('role', 'student');
+
+      if (turma) query = query.eq('turma', turma);
+      if (schoolId) query = query.eq('school_id', schoolId);
+
+      const { data: students, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+      if (!students || students.length === 0) {
+        res.status(404).json({ error: "Nenhum aluno encontrado" });
+        return;
+      }
+
+      console.log(`[RESET-ALL] Resetando senha de ${students.length} aluno(s)...`);
+
+      let success = 0;
+      let errors = 0;
+      const failures: string[] = [];
+
+      // Processar em lotes
+      for (let i = 0; i < students.length; i += BATCH_SIZE) {
+        const batch = students.slice(i, i + BATCH_SIZE);
+
+        const results = await Promise.all(batch.map(async (student) => {
+          try {
+            await supabaseAdmin.auth.admin.updateUserById(student.id, {
+              password: DEFAULT_PASSWORD,
+              user_metadata: { must_change_password: true }
+            });
+            return { success: true };
+          } catch (e: any) {
+            return { success: false, error: `${student.student_number}: ${e.message}` };
+          }
+        }));
+
+        results.forEach(r => {
+          if (r.success) success++;
+          else {
+            errors++;
+            if ('error' in r) failures.push(r.error);
+          }
+        });
+
+        if (i + BATCH_SIZE < students.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
+
+      console.log(`[RESET-ALL] ✅ Concluído: ${success} resetados, ${errors} erros`);
+
+      res.json({
+        success: errors === 0,
+        summary: {
+          total: students.length,
+          success,
+          errors
+        },
+        newPassword: DEFAULT_PASSWORD,
+        failures: failures.length > 0 ? failures : undefined
+      });
+    } catch (error: any) {
+      console.error("[RESET-ALL] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao resetar senhas",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/admin/students-legacy - REMOVIDO: Usar o novo /api/admin/students
+  // Este endpoint foi substituído pelo novo que usa a tabela 'students'
 
   // POST /api/admin/reset-password - Resetar senha do aluno
   // 🔒 PROTECTED: Requer autenticação + role admin
@@ -4406,24 +4683,31 @@ Para cada disciplina:
   // TURMAS - Gestão e Geração de Gabaritos
   // ============================================================================
 
-  // GET /api/admin/turmas - Listar turmas com contagem de alunos
+  // GET /api/admin/turmas - Listar turmas com contagem de alunos (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      // Buscar todas as turmas distintas com contagem
-      const { data: profiles, error } = await supabaseAdmin
-        .from('profiles')
+      const { school_id } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Buscar todas as turmas distintas com contagem da tabela students
+      const { data: students, error } = await supabaseAdmin
+        .from('students')
         .select('turma')
-        .eq('role', 'student')
+        .eq('school_id', school_id as string)
         .not('turma', 'is', null);
 
       if (error) throw error;
 
       // Agrupar por turma e contar
       const turmaMap = new Map<string, number>();
-      profiles?.forEach(p => {
-        if (p.turma) {
-          turmaMap.set(p.turma, (turmaMap.get(p.turma) || 0) + 1);
+      students?.forEach(s => {
+        if (s.turma) {
+          turmaMap.set(s.turma, (turmaMap.get(s.turma) || 0) + 1);
         }
       });
 
@@ -4442,25 +4726,38 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma
+  // GET /api/admin/turmas/:nome/alunos - Listar alunos de uma turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/turmas/:nome/alunos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const turma = decodeURIComponent(req.params.nome);
+      const { school_id } = req.query;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       const { data: alunos, error } = await supabaseAdmin
-        .from('profiles')
-        .select('id, name, student_number, turma, email')
-        .eq('role', 'student')
+        .from('students')
+        .select('id, name, matricula, turma')
+        .eq('school_id', school_id as string)
         .eq('turma', turma)
         .order('name');
 
       if (error) throw error;
 
+      // Mapear para formato esperado
+      const alunosFormatted = (alunos || []).map(a => ({
+        ...a,
+        student_number: a.matricula,
+        email: `${a.matricula}@escola.gabaritai.com`
+      }));
+
       res.json({
         success: true,
         turma,
-        alunos: alunos || [],
+        alunos: alunosFormatted,
         total: alunos?.length || 0
       });
     } catch (error: any) {
@@ -4469,7 +4766,7 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/turmas - Criar nova turma (criar um aluno placeholder para a turma existir)
+  // POST /api/admin/turmas - Criar nova turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.post("/api/admin/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4480,10 +4777,16 @@ Para cada disciplina:
         return;
       }
 
-      // Verificar se já existe alunos com essa turma
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Verificar se já existe alunos com essa turma na escola
       const { data: existing, error: checkError } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('id')
+        .eq('school_id', school_id)
         .eq('turma', nome)
         .limit(1);
 
@@ -4507,7 +4810,7 @@ Para cada disciplina:
     }
   });
 
-  // PUT /api/admin/turmas/:nome - Renomear turma
+  // PUT /api/admin/turmas/:nome - Renomear turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.put("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4519,9 +4822,14 @@ Para cada disciplina:
         return;
       }
 
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
       // Atualizar todos os alunos da turma para o novo nome
       const { data, error } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .update({ turma: novoNome })
         .eq('turma', turmaAtual)
         .eq('school_id', school_id)
@@ -4540,7 +4848,7 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/admin/turmas/:nome - Excluir turma (remove turma dos alunos, não exclui alunos)
+  // DELETE /api/admin/turmas/:nome - Excluir turma (remove alunos da turma)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.delete("/api/admin/turmas/:nome", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
@@ -4554,7 +4862,7 @@ Para cada disciplina:
 
       // Contar alunos na turma
       const { count } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('*', { count: 'exact', head: true })
         .eq('turma', turma)
         .eq('school_id', school_id);
@@ -4576,69 +4884,62 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/students - Criar um único aluno
+  // POST /api/admin/students - Criar um único aluno (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.post("/api/admin/students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { nome, matricula, turma, school_id } = req.body;
 
-      if (!nome || !matricula || !turma) {
-        res.status(400).json({ error: "Nome, matrícula e turma são obrigatórios" });
+      if (!nome || !matricula) {
+        res.status(400).json({ error: "Nome e matrícula são obrigatórios" });
         return;
       }
 
-      // Verificar se matrícula já existe
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
+
+      // Verificar se matrícula já existe na escola
       const { data: existing, error: checkError } = await supabaseAdmin
-        .from('profiles')
+        .from('students')
         .select('id')
-        .eq('student_number', matricula)
+        .eq('school_id', school_id)
+        .eq('matricula', matricula)
         .limit(1);
 
       if (checkError) throw checkError;
 
       if (existing && existing.length > 0) {
-        res.status(400).json({ error: "Matrícula já cadastrada" });
+        res.status(400).json({ error: "Matrícula já cadastrada nesta escola" });
         return;
       }
 
-      // Gerar email e senha
-      const email = `${matricula}@escola.gabaritai.com`;
-      const senha = Math.random().toString(36).slice(-8);
-
-      // Criar usuário no Supabase Auth
-      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: senha,
-        email_confirm: true,
-        user_metadata: {
+      // Criar aluno na tabela students (sem Auth)
+      const { data: newStudent, error: insertError } = await supabaseAdmin
+        .from('students')
+        .insert({
+          school_id,
+          matricula,
           name: nome,
-          role: 'student',
-          school_id: school_id || null,
-          student_number: matricula,
-          turma
-        }
-      });
+          turma: turma || null
+        })
+        .select()
+        .single();
 
-      if (authError) {
-        throw new Error(`Erro ao criar usuário: ${authError.message}`);
+      if (insertError) {
+        throw new Error(`Erro ao criar aluno: ${insertError.message}`);
       }
-
-      // Marcar como deve trocar senha no primeiro acesso
-      await supabaseAdmin
-        .from('profiles')
-        .update({ must_change_password: true })
-        .eq('id', authUser.user.id);
 
       res.json({
         success: true,
         aluno: {
-          id: authUser.user.id,
-          nome,
-          matricula,
-          turma,
-          email
-        },
-        senha // Retornar senha apenas na criação
+          id: newStudent.id,
+          nome: newStudent.name,
+          matricula: newStudent.matricula,
+          turma: newStudent.turma,
+          email: `${newStudent.matricula}@escola.gabaritai.com`
+        }
       });
     } catch (error: any) {
       console.error("[STUDENTS] Erro ao criar aluno:", error);
@@ -4646,22 +4947,28 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma
+  // POST /api/admin/generate-gabaritos - Gerar PDFs de gabaritos para turma (tabela students)
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // 🆕 Usa template XTRI com marcadores de canto para OMR e QR codes
   app.post("/api/admin/generate-gabaritos", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
-      const { turma, alunoIds } = req.body;
+      const { turma, alunoIds, dia, school_id } = req.body;
+
+      if (!school_id) {
+        res.status(400).json({ error: "school_id é obrigatório" });
+        return;
+      }
 
       if (!turma && (!alunoIds || alunoIds.length === 0)) {
         res.status(400).json({ error: "Informe a turma ou lista de alunos" });
         return;
       }
 
-      // Buscar alunos
+      // Buscar alunos da tabela students
       let query = supabaseAdmin
-        .from('profiles')
-        .select('id, name, student_number, turma')
-        .eq('role', 'student')
+        .from('students')
+        .select('id, name, matricula, turma, sheet_code')
+        .eq('school_id', school_id)
         .order('name');
 
       if (alunoIds && alunoIds.length > 0) {
@@ -4678,140 +4985,53 @@ Para cada disciplina:
         return;
       }
 
-      console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos para turma: ${turma || 'selecionados'}`);
+      console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos XTRI para turma: ${turma || 'selecionados'}`);
 
-      // Carregar template PDF
-      const templatePath = path.join(process.cwd(), "data", "Modelo-de-gabarito.pdf");
-      let templateBytes: Buffer;
+      // Converter alunos para formato esperado pelo generateBatchPDF
+      // Usa sheet_code existente do banco, gera novo apenas se não tiver
+      const studentsForPdf = alunos.map(aluno => ({
+        batch_id: 'admin-generated',
+        enrollment_code: aluno.matricula || null,
+        student_name: aluno.name || 'Sem nome',
+        class_name: aluno.turma || null,
+        sheet_code: aluno.sheet_code || generateSheetCode(),
+      }));
 
-      try {
-        templateBytes = await fs.readFile(templatePath);
-      } catch {
-        // Se não encontrar o template, criar um gabarito simples
-        console.warn("[GABARITOS] Template não encontrado, usando gabarito padrão");
-
-        // Criar PDF simples com pdf-lib
-        const pdfDoc = await PDFDocument.create();
-        const font = await pdfDoc.embedFont("Helvetica");
-        const boldFont = await pdfDoc.embedFont("Helvetica-Bold");
-
-        for (const aluno of alunos) {
-          const page = pdfDoc.addPage([595.28, 841.89]); // A4
-          const { height } = page.getSize();
-
-          // Cabeçalho
-          page.drawText("CARTÃO-RESPOSTA", {
-            x: 50,
-            y: height - 50,
-            size: 24,
-            font: boldFont,
-          });
-
-          page.drawText("SIMULADO DO EXAME NACIONAL DO ENSINO MÉDIO", {
-            x: 50,
-            y: height - 75,
-            size: 10,
-            font,
-          });
-
-          // Dados do aluno
-          page.drawText(`Nome: ${aluno.name || ''}`, {
-            x: 50,
-            y: height - 120,
-            size: 12,
-            font,
-          });
-
-          page.drawText(`Turma: ${aluno.turma || ''}`, {
-            x: 400,
-            y: height - 120,
-            size: 12,
-            font,
-          });
-
-          page.drawText(`Matrícula: ${aluno.student_number || ''}`, {
-            x: 400,
-            y: height - 140,
-            size: 12,
-            font,
-          });
-
-          // Grid de respostas (simplificado)
-          const startY = height - 200;
-          const cols = 6;
-          const questionsPerCol = 15;
-          const colWidth = 85;
-          const rowHeight = 20;
-
-          for (let col = 0; col < cols; col++) {
-            for (let row = 0; row < questionsPerCol; row++) {
-              const qNum = col * questionsPerCol + row + 1;
-              const x = 50 + col * colWidth;
-              const y = startY - row * rowHeight;
-
-              page.drawText(`${qNum.toString().padStart(2, '0')}  Ⓐ Ⓑ Ⓒ Ⓓ Ⓔ`, {
-                x,
-                y,
-                size: 9,
-                font,
-              });
+      // Salvar sheet_codes gerados de volta no banco (para alunos que não tinham)
+      const alunosSemCodigo = alunos.filter((a, i) => !a.sheet_code && studentsForPdf[i].sheet_code);
+      if (alunosSemCodigo.length > 0) {
+        console.log(`[GABARITOS] Salvando ${alunosSemCodigo.length} sheet_codes novos no banco`);
+        for (let i = 0; i < alunos.length; i++) {
+          if (!alunos[i].sheet_code && studentsForPdf[i].sheet_code) {
+            const { error: updateError } = await supabaseAdmin
+              .from('students')
+              .update({ sheet_code: studentsForPdf[i].sheet_code })
+              .eq('id', alunos[i].id);
+            if (updateError) {
+              console.error(`[GABARITOS] Erro ao salvar sheet_code para ${alunos[i].name}:`, updateError);
             }
           }
         }
-
-        const pdfBytes = await pdfDoc.save();
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
-        res.send(Buffer.from(pdfBytes));
-        return;
       }
 
-      // Usar template existente
-      const finalDoc = await PDFDocument.create();
-      const font = await finalDoc.embedFont("Helvetica-Bold");
+      // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
+      const examName = dia ? `Dia ${dia}` : 'Simulado ENEM';
+      const pdfBuffer = await generateBatchPDF(studentsForPdf, examName);
 
-      for (const aluno of alunos) {
-        // Carregar template para cada aluno
-        const templateDoc = await PDFDocument.load(templateBytes);
-        const [templatePage] = await finalDoc.copyPages(templateDoc, [0]);
+      console.log(`[GABARITOS] PDF XTRI gerado com ${alunos.length} páginas`);
 
-        const { width, height } = templatePage.getSize();
-
-        // Adicionar nome do aluno (alinhado com turma e matrícula)
-        templatePage.drawText(aluno.name || '', {
-          x: 55,
-          y: height - 145, // Alinhado com turma e matrícula
-          size: 14,
-          font,
-        });
-
-        // Adicionar turma (campo em branco abaixo do cabeçalho "TURMA")
-        templatePage.drawText(aluno.turma || '', {
-          x: width - 180,
-          y: height - 145, // Campo em branco abaixo do cabeçalho
-          size: 14,
-          font,
-        });
-
-        // Adicionar matrícula (campo em branco abaixo do cabeçalho "MATRICULA")
-        templatePage.drawText(aluno.student_number || '', {
-          x: width - 100,
-          y: height - 145, // Campo em branco abaixo do cabeçalho
-          size: 14,
-          font,
-        });
-
-        finalDoc.addPage(templatePage);
-      }
-
-      const pdfBytes = await finalDoc.save();
-
-      console.log(`[GABARITOS] PDF gerado com ${alunos.length} páginas`);
+      // Gerar CSV com mapeamento matrícula -> sheet_code
+      const codesMapping = studentsForPdf.map(s => ({
+        matricula: s.enrollment_code,
+        nome: s.student_name,
+        turma: s.class_name,
+        sheet_code: s.sheet_code,
+      }));
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="gabaritos_${turma || 'selecionados'}.pdf"`);
-      res.send(Buffer.from(pdfBytes));
+      res.setHeader('X-Sheet-Codes', JSON.stringify(codesMapping));
+      res.send(pdfBuffer);
 
     } catch (error: any) {
       console.error("[GABARITOS] Erro:", error);
@@ -5562,6 +5782,290 @@ Para cada disciplina:
     }
   });
 
+  // POST /api/auth/promote-to-admin - Promover usuário atual para super_admin
+  // ⚠️ ENDPOINT TEMPORÁRIO - remover em produção
+  app.post("/api/auth/promote-to-admin", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as any;
+      const userId = authReq.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Usuário não autenticado" });
+      }
+
+      // Buscar profile atual
+      const { data: profile, error: fetchError } = await supabaseAdmin
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (fetchError || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      console.log(`[PROMOTE] Role atual: ${profile.role} -> super_admin`);
+
+      // Atualizar para super_admin
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: 'super_admin' })
+        .eq("id", userId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      res.json({
+        success: true,
+        message: "Usuário promovido a super_admin",
+        user: {
+          id: userId,
+          email: profile.email,
+          name: profile.name,
+          oldRole: profile.role,
+          newRole: 'super_admin'
+        }
+      });
+    } catch (error: any) {
+      console.error("[PROMOTE] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/auth/my-role - Verificar role do usuário atual
+  app.get("/api/auth/my-role", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as any;
+      const userId = authReq.user?.id;
+
+      const { data: profile, error } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, role, school_id")
+        .eq("id", userId)
+        .single();
+
+      if (error || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      res.json(profile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/auth/login-matricula - Login por MATRÍCULA + SENHA (não por email)
+  // Fluxo: Aluno digita matrícula + senha → backend busca email → autentica no Supabase
+  // Se o aluno tem profile mas não tem Auth user, retorna needsRegistration: true
+  app.post("/api/auth/login-matricula", async (req: Request, res: Response) => {
+    try {
+      const { matricula, senha } = req.body as { matricula: string; senha: string };
+
+      if (!matricula || !senha) {
+        return res.status(400).json({
+          error: "Matrícula e senha são obrigatórios"
+        });
+      }
+
+      console.log(`[LOGIN] Tentativa de login com matrícula: ${matricula}`);
+
+      // 1. Buscar profile pela matrícula para obter o email
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, student_number, role")
+        .eq("student_number", matricula.trim())
+        .single();
+
+      if (profileError || !profile) {
+        console.log(`[LOGIN] Matrícula não encontrada: ${matricula}`);
+        return res.status(401).json({
+          error: "Matrícula não encontrada"
+        });
+      }
+
+      // 2. Verificar se existe Auth user para este profile
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+
+      if (!authUser?.user) {
+        // Profile existe mas não tem Auth user - precisa registrar senha
+        console.log(`[LOGIN] Profile existe mas sem Auth user: ${matricula}`);
+        return res.status(200).json({
+          success: false,
+          needsRegistration: true,
+          message: "Primeiro acesso. Por favor, defina sua senha.",
+          profile: {
+            id: profile.id,
+            name: profile.name,
+            matricula: profile.student_number,
+            email: profile.email
+          }
+        });
+      }
+
+      // 3. Autenticar no Supabase usando o email encontrado
+      const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+        email: profile.email,
+        password: senha
+      });
+
+      if (authError || !authData.session) {
+        console.log(`[LOGIN] Senha incorreta para matrícula: ${matricula}`);
+        return res.status(401).json({
+          error: "Senha incorreta"
+        });
+      }
+
+      // 4. Verificar se precisa trocar senha (must_change_password)
+      const mustChangePassword = authData.user?.user_metadata?.must_change_password === true;
+
+      console.log(`[LOGIN] ✅ Login bem-sucedido: ${matricula} (${profile.name})`);
+
+      res.json({
+        success: true,
+        session: authData.session,
+        user: {
+          id: authData.user.id,
+          email: profile.email,
+          name: profile.name,
+          matricula: profile.student_number,
+          role: profile.role
+        },
+        mustChangePassword
+      });
+
+    } catch (error: any) {
+      console.error("[LOGIN] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao fazer login",
+        details: error.message
+      });
+    }
+  });
+
+  // POST /api/auth/register-student - Registrar senha para aluno existente (primeiro acesso)
+  // Aluno já tem profile (importado via CSV) mas não tem Auth user
+  app.post("/api/auth/register-student", async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+
+    try {
+      const { matricula, senha } = req.body as { matricula: string; senha: string };
+
+      if (!matricula || !senha) {
+        return res.status(400).json({
+          error: "Matrícula e senha são obrigatórios"
+        });
+      }
+
+      if (senha.length < 6) {
+        return res.status(400).json({
+          error: "Senha deve ter pelo menos 6 caracteres"
+        });
+      }
+
+      console.log(`[REGISTER] Registrando senha para matrícula: ${matricula}`);
+
+      // 1. Buscar profile pela matrícula
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, name, student_number, role")
+        .eq("student_number", matricula.trim())
+        .single();
+
+      if (profileError || !profile) {
+        console.log(`[REGISTER] Matrícula não encontrada: ${matricula}`);
+        return res.status(404).json({
+          error: "Matrícula não encontrada"
+        });
+      }
+
+      // 2. Verificar se já existe Auth user
+      const { data: existingAuth } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+
+      if (existingAuth?.user) {
+        console.log(`[REGISTER] Auth user já existe para: ${matricula}`);
+        return res.status(400).json({
+          error: "Você já tem uma conta. Use o login normal.",
+          hint: "Se esqueceu a senha, solicite reset ao administrador."
+        });
+      }
+
+      // 3. Criar Auth user com a senha fornecida
+      const { data: newAuth, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: profile.email,
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          name: profile.name,
+          student_number: matricula,
+          must_change_password: false
+        }
+      });
+
+      if (authError) {
+        console.error(`[REGISTER] Erro ao criar Auth user: ${authError.message}`);
+        return res.status(500).json({
+          error: "Erro ao criar conta",
+          details: authError.message
+        });
+      }
+
+      // 4. Atualizar o profile para usar o ID do Auth user
+      // (importante: o profile.id pode ser diferente do auth user id)
+      if (newAuth.user && newAuth.user.id !== profile.id) {
+        // Deletar profile antigo e criar com novo ID
+        await supabaseAdmin.from("profiles").delete().eq("id", profile.id);
+        await supabaseAdmin.from("profiles").insert({
+          id: newAuth.user.id,
+          email: profile.email,
+          name: profile.name,
+          role: profile.role,
+          student_number: profile.student_number,
+          turma: (profile as any).turma,
+          school_id: (profile as any).school_id
+        });
+      }
+
+      // 5. Fazer login automático
+      const { data: authData, error: loginError } = await supabaseAdmin.auth.signInWithPassword({
+        email: profile.email,
+        password: senha
+      });
+
+      if (loginError || !authData.session) {
+        // Conta criada mas login falhou - ainda assim é sucesso
+        console.log(`[REGISTER] ✅ Conta criada, login manual necessário: ${matricula}`);
+        return res.json({
+          success: true,
+          message: "Conta criada com sucesso! Faça login.",
+          needsLogin: true
+        });
+      }
+
+      console.log(`[REGISTER] ✅ Conta criada e logado: ${matricula} (${profile.name})`);
+
+      res.json({
+        success: true,
+        message: "Conta criada com sucesso!",
+        session: authData.session,
+        user: {
+          id: authData.user.id,
+          email: profile.email,
+          name: profile.name,
+          matricula: profile.student_number,
+          role: profile.role
+        }
+      });
+
+    } catch (error: any) {
+      console.error("[REGISTER] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao registrar",
+        details: error.message
+      });
+    }
+  });
+
   // GET /api/profile/:userId - Buscar profile de um usuário (bypass RLS)
   app.get("/api/profile/:userId", async (req: Request, res: Response) => {
     try {
@@ -5686,7 +6190,8 @@ Para cada disciplina:
   // ===========================================================================
 
   // GET /api/escola/results - Buscar resultados dos alunos da escola
-  app.get("/api/escola/results", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
+  app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       // Por enquanto, retorna todos os resultados (após implementar auth, filtrar por school_id)
       // Em produção: extrair school_id do token JWT e filtrar
@@ -5776,7 +6281,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/dashboard - Dashboard completo com rankings
-  app.get("/api/escola/dashboard", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
+  app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       // Buscar todos os resultados
       const { data: answers, error: answersError } = await supabaseAdmin
@@ -5956,7 +6462,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/turmas/:turma/alunos - Alunos de uma turma com métricas comparativas
-  app.get("/api/escola/turmas/:turma/alunos", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/turmas/:turma/alunos", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
@@ -6052,7 +6559,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/alunos/:matricula/historico - Histórico completo de um aluno
-  app.get("/api/escola/alunos/:matricula/historico", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/alunos/:matricula/historico", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { matricula } = req.params;
       const decodedMatricula = decodeURIComponent(matricula);
@@ -6173,7 +6681,8 @@ Para cada disciplina:
   });
 
   // GET /api/escola/series - Lista de séries disponíveis
-  app.get("/api/escola/series", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/series", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { data: answers, error } = await supabaseAdmin
         .from("student_answers")
@@ -6224,7 +6733,8 @@ Para cada disciplina:
   }
 
   // GET /api/student/study-plan/:studentId/:examId - Buscar/Gerar plano de estudos
-  app.get("/api/student/study-plan/:studentId/:examId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Alunos podem ver seus próprios dados, admins podem ver todos
+  app.get("/api/student/study-plan/:studentId/:examId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId, examId } = req.params;
 
@@ -6354,7 +6864,8 @@ Para cada disciplina:
   });
 
   // GET /api/student/exercise-lists/:studentId - Buscar listas liberadas para o aluno
-  app.get("/api/student/exercise-lists/:studentId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas o próprio aluno ou admins
+  app.get("/api/student/exercise-lists/:studentId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId } = req.params;
 
@@ -6401,7 +6912,8 @@ Para cada disciplina:
   });
 
   // GET /api/student/exercise-lists/:studentId/download/:listId - Download de lista
-  app.get("/api/student/exercise-lists/:studentId/download/:listId", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas o próprio aluno ou admins
+  app.get("/api/student/exercise-lists/:studentId/download/:listId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId, listId } = req.params;
 
@@ -6556,7 +7068,8 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/schools - Lista todas as escolas
-  app.get("/api/schools", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode listar escolas
+  app.get("/api/schools", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("schools")
@@ -6572,7 +7085,8 @@ Para cada disciplina:
   });
 
   // GET /api/schools/:id - Buscar escola por ID
-  app.get("/api/schools/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin ou school_admin da escola
+  app.get("/api/schools/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -6591,7 +7105,8 @@ Para cada disciplina:
   });
 
   // POST /api/schools - Criar escola
-  app.post("/api/schools", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode criar escolas
+  app.post("/api/schools", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { name, slug } = req.body;
 
@@ -6624,7 +7139,8 @@ Para cada disciplina:
   });
 
   // PUT /api/schools/:id - Atualizar escola
-  app.put("/api/schools/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas super_admin pode atualizar escolas
+  app.put("/api/schools/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { name, slug } = req.body;
@@ -6652,23 +7168,78 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/schools/:id - Excluir escola
-  app.delete("/api/schools/:id", async (req: Request, res: Response) => {
+  // DELETE /api/schools/:id - Excluir escola (CASCADE: remove provas, respostas e alunos vinculados)
+  // PROTEGIDO: Apenas super_admin pode excluir escolas
+  app.delete("/api/schools/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      // Verificar se há dados relacionados antes de excluir
-      const { count: examsCount } = await supabaseAdmin
+      console.log(`[DELETE SCHOOL] Iniciando exclusão em cascata da escola ${id}`);
+
+      // 1. Buscar todos os exams da escola
+      const { data: exams } = await supabaseAdmin
         .from("exams")
-        .select("*", { count: "exact", head: true })
+        .select("id")
         .eq("school_id", id);
 
-      if (examsCount && examsCount > 0) {
-        return res.status(400).json({
-          error: "Não é possível excluir escola com provas cadastradas"
-        });
+      const examIds = exams?.map(e => e.id) || [];
+
+      // 2. Deletar student_answers de todos os exams
+      if (examIds.length > 0) {
+        const { error: answersError } = await supabaseAdmin
+          .from("student_answers")
+          .delete()
+          .in("exam_id", examIds);
+
+        if (answersError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar respostas:", answersError);
+        } else {
+          console.log(`[DELETE SCHOOL] Respostas dos ${examIds.length} simulados removidas`);
+        }
       }
 
+      // 3. Deletar todos os exams da escola
+      if (examIds.length > 0) {
+        const { error: examsError } = await supabaseAdmin
+          .from("exams")
+          .delete()
+          .eq("school_id", id);
+
+        if (examsError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar simulados:", examsError);
+        } else {
+          console.log(`[DELETE SCHOOL] ${examIds.length} simulados removidos`);
+        }
+      }
+
+      // 4. Deletar alunos vinculados à escola (Auth + Profile)
+      const { data: students } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("school_id", id)
+        .eq("role", "student");
+
+      if (students && students.length > 0) {
+        for (const student of students) {
+          // Deletar Auth user (ignora erro se não existir)
+          await supabaseAdmin.auth.admin.deleteUser(student.id).catch(() => {});
+        }
+
+        // Deletar profiles
+        const { error: profilesError } = await supabaseAdmin
+          .from("profiles")
+          .delete()
+          .eq("school_id", id)
+          .eq("role", "student");
+
+        if (profilesError) {
+          console.error("[DELETE SCHOOL] Erro ao deletar alunos:", profilesError);
+        } else {
+          console.log(`[DELETE SCHOOL] ${students.length} alunos removidos`);
+        }
+      }
+
+      // 5. Finalmente deletar a escola
       const { error } = await supabaseAdmin
         .from("schools")
         .delete()
@@ -6676,14 +7247,25 @@ Para cada disciplina:
 
       if (error) throw error;
 
-      res.json({ success: true, message: "Escola excluída com sucesso" });
+      console.log(`[DELETE SCHOOL] ✅ Escola ${id} excluída com sucesso`);
+
+      res.json({
+        success: true,
+        message: "Escola excluída com sucesso",
+        deleted: {
+          exams: examIds.length,
+          students: students?.length || 0
+        }
+      });
     } catch (error: any) {
+      console.error("[DELETE SCHOOL] Erro:", error);
       res.status(500).json({ error: error.message });
     }
   });
 
   // GET /api/schools/:id/stats - Estatísticas da escola
-  app.get("/api/schools/:id/stats", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.get("/api/schools/:id/stats", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -6729,7 +7311,8 @@ Para cada disciplina:
   // ============================================================================
 
   // GET /api/simulados - Lista simulados (filtrado por school_id se fornecido)
-  app.get("/api/simulados", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.get("/api/simulados", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id } = req.query;
 
@@ -6769,7 +7352,8 @@ Para cada disciplina:
   });
 
   // POST /api/simulados - Criar simulado vinculado a escola
-  app.post("/api/simulados", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.post("/api/simulados", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id, title, template_type, total_questions, answer_key } = req.body;
 
@@ -6799,7 +7383,8 @@ Para cada disciplina:
   });
 
   // PUT /api/simulados/:id - Atualizar simulado
-  app.put("/api/simulados/:id", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.put("/api/simulados/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { title, template_type, total_questions, applied_at, status, answer_key } = req.body;
@@ -6828,7 +7413,8 @@ Para cada disciplina:
   });
 
   // PUT /api/simulados/:id/status - Atualizar status do simulado
-  app.put("/api/simulados/:id/status", async (req: Request, res: Response) => {
+  // PROTEGIDO: Apenas admins
+  app.put("/api/simulados/:id/status", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -6852,23 +7438,28 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/simulados/:id - Deletar simulado
-  app.delete("/api/simulados/:id", async (req: Request, res: Response) => {
+  // DELETE /api/simulados/:id - Deletar simulado (CASCADE: remove respostas vinculadas)
+  // PROTEGIDO: Apenas admins
+  app.delete("/api/simulados/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      // Verificar se tem respostas vinculadas
-      const { count } = await supabaseAdmin
-        .from("student_answers")
-        .select("*", { count: "exact", head: true })
-        .eq("exam_id", id);
+      console.log(`[DELETE SIMULADO] Iniciando exclusão em cascata do simulado ${id}`);
 
-      if (count && count > 0) {
-        return res.status(400).json({
-          error: `Não é possível excluir. Existem ${count} respostas vinculadas a este simulado.`
-        });
+      // 1. Deletar todas as respostas vinculadas
+      const { count: answersDeleted, error: answersError } = await supabaseAdmin
+        .from("student_answers")
+        .delete()
+        .eq("exam_id", id)
+        .select("*", { count: "exact", head: true });
+
+      if (answersError) {
+        console.error("[DELETE SIMULADO] Erro ao deletar respostas:", answersError);
+      } else {
+        console.log(`[DELETE SIMULADO] ${answersDeleted || 0} respostas removidas`);
       }
 
+      // 2. Deletar o simulado
       const { error } = await supabaseAdmin
         .from("exams")
         .delete()
@@ -6876,8 +7467,290 @@ Para cada disciplina:
 
       if (error) throw error;
 
-      res.json({ success: true, message: "Simulado excluído com sucesso" });
+      console.log(`[DELETE SIMULADO] ✅ Simulado ${id} excluído com sucesso`);
+
+      res.json({
+        success: true,
+        message: "Simulado excluído com sucesso",
+        deleted: {
+          answers: answersDeleted || 0
+        }
+      });
     } catch (error: any) {
+      console.error("[DELETE SIMULADO] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================================
+  // ANSWER SHEET BATCHES - Gabaritos com QR Code
+  // ============================================================
+
+  /**
+   * POST /api/answer-sheet-batches
+   * Cria um novo lote de gabaritos a partir de CSV
+   *
+   * Body (multipart/form-data):
+   * - csv: arquivo CSV com alunos (colunas: nome, matricula, turma)
+   * - school_id: ID da escola
+   * - exam_id: ID do simulado/prova
+   * - batch_name: Nome do lote (ex: "Simulado ENEM - Março 2025")
+   */
+  app.post("/api/answer-sheet-batches", uploadCsv.single("csv"), async (req: Request, res: Response) => {
+    try {
+      const { school_id, exam_id, batch_name } = req.body;
+
+      // Validações
+      if (!req.file) {
+        return res.status(400).json({ error: "Arquivo CSV não fornecido" });
+      }
+
+      if (!school_id || !exam_id || !batch_name) {
+        return res.status(400).json({
+          error: "Campos obrigatórios: school_id, exam_id, batch_name"
+        });
+      }
+
+      // Ler e processar CSV
+      const csvContent = req.file.buffer.toString("utf-8");
+      const students = parseStudentCSV(csvContent);
+
+      if (students.length === 0) {
+        return res.status(400).json({ error: "CSV vazio ou sem alunos válidos" });
+      }
+
+      // Criar batch no Supabase
+      const result = await createAnswerSheetBatch(school_id, exam_id, batch_name, students);
+
+      console.log(`[BATCH] Lote criado: ${result.batch.id} com ${result.students.length} alunos`);
+
+      res.json({
+        success: true,
+        batch: result.batch,
+        students_count: result.students.length,
+        students: result.students.map(s => ({
+          id: s.id,
+          student_name: s.student_name,
+          sheet_code: s.sheet_code,
+          enrollment_code: s.enrollment_code,
+          class_name: s.class_name,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[BATCH] Erro ao criar lote:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-batches/:batchId
+   * Retorna detalhes de um lote
+   */
+  app.get("/api/answer-sheet-batches/:batchId", async (req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      const batch = await getBatchById(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+      }
+
+      const students = await getStudentsByBatchId(batchId);
+
+      res.json({
+        batch,
+        students_count: students.length,
+        students,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-batches/:batchId/pdf
+   * Gera e retorna PDF com gabaritos do lote
+   */
+  app.get("/api/answer-sheet-batches/:batchId/pdf", async (req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      // Buscar lote
+      const batch = await getBatchById(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+      }
+
+      // Buscar alunos
+      const students = await getStudentsByBatchId(batchId);
+      if (students.length === 0) {
+        return res.status(400).json({ error: "Lote sem alunos" });
+      }
+
+      // Buscar nome do simulado
+      const { data: exam } = await supabaseAdmin
+        .from("exams")
+        .select("title")
+        .eq("id", batch.exam_id)
+        .single();
+
+      const examName = exam?.title || batch.name;
+
+      console.log(`[PDF] Gerando PDF para lote ${batchId} com ${students.length} alunos`);
+
+      // Gerar PDF
+      const pdfBuffer = await generateBatchPDF(students, examName);
+
+      // Enviar PDF
+      const filename = `gabaritos_${batch.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.send(pdfBuffer);
+
+      console.log(`[PDF] PDF gerado: ${filename} (${pdfBuffer.length} bytes)`);
+    } catch (error: any) {
+      console.error("[PDF] Erro ao gerar PDF:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/answer-sheet-students/:sheetCode
+   * Busca aluno por sheet_code (QR Code)
+   */
+  app.get("/api/answer-sheet-students/:sheetCode", async (req: Request, res: Response) => {
+    try {
+      const { sheetCode } = req.params;
+
+      const student = await getStudentBySheetCode(sheetCode);
+      if (!student) {
+        return res.status(404).json({ error: "Código não encontrado" });
+      }
+
+      res.json(student);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/answer-sheet-students/:sheetCode/answers
+   * Salva respostas de um aluno (chamado após leitura OMR)
+   *
+   * Body:
+   * - answers: array de respostas ["A", "B", null, "C", ...]
+   */
+  app.post("/api/answer-sheet-students/:sheetCode/answers", async (req: Request, res: Response) => {
+    try {
+      const { sheetCode } = req.params;
+      const { answers } = req.body;
+
+      if (!answers || !Array.isArray(answers)) {
+        return res.status(400).json({ error: "Campo 'answers' deve ser um array" });
+      }
+
+      // Verificar se aluno existe
+      const student = await getStudentBySheetCode(sheetCode);
+      if (!student) {
+        return res.status(404).json({ error: "Código não encontrado" });
+      }
+
+      // Atualizar respostas
+      const updated = await updateStudentAnswers(sheetCode, answers);
+
+      console.log(`[ANSWERS] Respostas salvas para ${sheetCode}: ${answers.filter(a => a).length}/90`);
+
+      res.json({
+        success: true,
+        student: updated,
+      });
+    } catch (error: any) {
+      console.error("[ANSWERS] Erro ao salvar respostas:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * POST /api/process-sheet-with-qr
+   * Processa gabarito: lê QR + OMR e salva respostas
+   * Endpoint conveniente que faz tudo em uma chamada
+   *
+   * Body (multipart/form-data):
+   * - image: imagem do gabarito escaneado
+   */
+  app.post("/api/process-sheet-with-qr", upload.single("image"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Imagem não fornecida" });
+      }
+
+      // 1. Enviar para API OMR com QR
+      const axios = (await import("axios")).default;
+      const FormData = (await import("form-data")).default;
+
+      const formData = new FormData();
+      formData.append("image", req.file.buffer, {
+        filename: "scan.png",
+        contentType: req.file.mimetype,
+      });
+
+      const omrUrl = `${PYTHON_OMR_SERVICE_URL}/api/process-sheet`;
+      console.log(`[PROCESS] Enviando imagem para OMR: ${omrUrl}`);
+
+      const omrResponse = await axios.post(omrUrl, formData, {
+        headers: formData.getHeaders(),
+        timeout: 60000,
+      });
+
+      const omrResult = omrResponse.data;
+
+      if (omrResult.status !== "sucesso") {
+        return res.status(400).json({
+          error: omrResult.message || "Erro no processamento OMR",
+          code: omrResult.code,
+        });
+      }
+
+      const { sheet_code, answers, stats } = omrResult;
+
+      // 2. Buscar aluno no Supabase
+      const student = await getStudentBySheetCode(sheet_code);
+      if (!student) {
+        return res.status(404).json({
+          error: `Código ${sheet_code} não encontrado no sistema`,
+          code: "STUDENT_NOT_FOUND",
+          sheet_code,
+        });
+      }
+
+      // 3. Salvar respostas
+      const updated = await updateStudentAnswers(sheet_code, answers);
+
+      console.log(`[PROCESS] Processado: ${sheet_code} - ${student.student_name} - ${stats.answered}/90 respostas`);
+
+      res.json({
+        success: true,
+        sheet_code,
+        student: {
+          id: student.id,
+          student_name: student.student_name,
+          enrollment_code: student.enrollment_code,
+          class_name: student.class_name,
+        },
+        answers,
+        stats,
+        processed_at: updated?.processed_at,
+      });
+    } catch (error: any) {
+      console.error("[PROCESS] Erro:", error.response?.data || error.message);
+
+      // Tratar erros da API OMR
+      if (error.response?.data) {
+        return res.status(error.response.status || 500).json(error.response.data);
+      }
+
       res.status(500).json({ error: error.message });
     }
   });

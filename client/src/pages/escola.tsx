@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { authFetch } from '@/lib/authFetch';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -202,7 +203,7 @@ export default function EscolaPage() {
   const fetchDashboard = useCallback(async () => {
     try {
       setLoadingDashboard(true);
-      const response = await fetch('/api/escola/dashboard');
+      const response = await authFetch('/api/escola/dashboard');
       if (!response.ok) throw new Error('Erro ao buscar dashboard');
       const data = await response.json();
       setDashboardData(data);
@@ -217,7 +218,7 @@ export default function EscolaPage() {
   const fetchResults = useCallback(async () => {
     try {
       setLoadingResults(true);
-      const response = await fetch('/api/escola/results');
+      const response = await authFetch('/api/escola/results');
       if (!response.ok) throw new Error('Erro ao buscar resultados');
       const data = await response.json();
       setResults(data.results || []);
@@ -232,7 +233,7 @@ export default function EscolaPage() {
   const fetchTurmaAlunos = useCallback(async (turma: string) => {
     try {
       setLoadingTurmaAlunos(true);
-      const response = await fetch(`/api/escola/turmas/${encodeURIComponent(turma)}/alunos`);
+      const response = await authFetch(`/api/escola/turmas/${encodeURIComponent(turma)}/alunos`);
       if (!response.ok) throw new Error('Erro ao buscar alunos da turma');
       const data = await response.json();
       setTurmaAlunosData(data);
@@ -247,7 +248,7 @@ export default function EscolaPage() {
   const fetchAlunoHistorico = useCallback(async (matricula: string) => {
     try {
       setLoadingAlunoHistorico(true);
-      const response = await fetch(`/api/escola/alunos/${encodeURIComponent(matricula)}/historico`);
+      const response = await authFetch(`/api/escola/alunos/${encodeURIComponent(matricula)}/historico`);
       if (!response.ok) throw new Error('Erro ao buscar histórico do aluno');
       const data = await response.json();
       setAlunoHistorico(data);
