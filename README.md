@@ -286,8 +286,8 @@ OCR_SERVICE_URL=http://localhost:5002
 ### Desenvolvimento
 
 ```bash
-# Inicia todos os serviços (recomendado)
-./start_all_services.sh
+# Inicia o servidor (recomendado)
+./run.sh
 
 # Ou inicie manualmente:
 

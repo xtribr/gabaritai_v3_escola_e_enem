@@ -57,16 +57,14 @@ cd ..
 
 ```bash
 # Na raiz do projeto
-./start_all_services.sh
+./run.sh
 ```
 
-Este script:
-- ✅ Limpa processos antigos
-- ✅ Inicia Python OMR Service (porta 5002)
-- ✅ Inicia Python TRI Service (porta 5003)
-- ✅ Inicia Node.js + Frontend (porta 8080)
+Este script inicia o servidor Node.js + Frontend (porta 8080).
 
-### Opção 2: Manual (4 Terminais)
+Para os serviços Python OMR e TRI, eles estão hospedados no Fly.io em produção.
+
+### Opção 2: Manual
 
 **Terminal 1 - Python OMR Service:**
 ```bash
@@ -125,7 +123,7 @@ npm install
 lsof -ti :8080 | xargs kill -9
 
 # Ou use o script
-./start_all_services.sh  # Ele limpa automaticamente
+./run.sh
 ```
 
 ### Python services não iniciam

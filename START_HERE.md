@@ -82,7 +82,6 @@ Abra: **http://localhost:8080** ✅
 Se precisar de mais detalhes:
 
 - **`README_SETUP.md`** - Guia completo
-- **`COMPLETE_FIX.md`** - Instruções passo-a-passo
 - **`TROUBLESHOOTING.md`** - Resolução de problemas
 - **`setup.py`** - Script de setup automático
 

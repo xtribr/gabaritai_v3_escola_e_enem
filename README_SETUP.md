@@ -37,7 +37,7 @@ O script vai:
 
 ### **OPÇÃO 2: Manual (Se python não funcionar)**
 
-Siga o arquivo `COMPLETE_FIX.md`:
+Execute manualmente:
 
 ```bash
 cd "/Volumes/notebook/gabaritAI 2"
@@ -77,7 +77,6 @@ gabaritAI 2/
 ├── vite.config.ts        # ✅ CORRIGIDO
 ├── tsconfig.json
 ├── setup.py              # ✅ NOVO - Setup automático
-├── COMPLETE_FIX.md       # Instruções manuais
 ├── QUICK_START.md        # Comandos rápidos
 └── README_SETUP.md       # Este arquivo
 ```
@@ -142,10 +141,8 @@ sudo npm install
 
 ## 📚 Arquivos de Suporte
 
-- **`COMPLETE_FIX.md`** - Instruções passo-a-passo detalhadas
 - **`QUICK_START.md`** - Comandos para copiar e colar
 - **`TROUBLESHOOTING.md`** - Guia de resolução de problemas
-- **`FIXES_APPLIED.md`** - Changelog das mudanças técnicas
 
 ---
 
@@ -165,7 +162,7 @@ Depois que conseguir rodar:
 - Se usar macOS/Linux, comece com `python3 setup.py`
 - Se usar Windows, use `python setup.py` ou PowerShell
 - Sempre comece limpando: `rm -rf node_modules` antes de `npm install`
-- Se algo der erro, leia `COMPLETE_FIX.md` ou `TROUBLESHOOTING.md`
+- Se algo der erro, leia `TROUBLESHOOTING.md`
 
 ---
 
@@ -174,8 +171,7 @@ Depois que conseguir rodar:
 Se ainda não funcionar:
 
 1. Execute `python3 setup.py` (automático)
-2. Se falhar, siga `COMPLETE_FIX.md` (manual)
-3. Se ainda falhar, verifique `TROUBLESHOOTING.md`
+2. Se falhar, verifique `TROUBLESHOOTING.md`
 
 ---
 
