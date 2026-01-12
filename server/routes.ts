@@ -4926,7 +4926,7 @@ Para cada disciplina:
       // Buscar alunos da tabela students
       let query = supabaseAdmin
         .from('students')
-        .select('id, name, matricula, turma')
+        .select('id, name, matricula, turma, sheet_code')
         .eq('school_id', school_id)
         .order('name');
 
@@ -4947,12 +4947,13 @@ Para cada disciplina:
       console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos XTRI para turma: ${turma || 'selecionados'}`);
 
       // Converter alunos para formato esperado pelo generateBatchPDF
+      // Usa sheet_code existente do banco, gera novo apenas se não tiver
       const studentsForPdf = alunos.map(aluno => ({
         batch_id: 'admin-generated',
         enrollment_code: aluno.matricula || null,
         student_name: aluno.name || 'Sem nome',
         class_name: aluno.turma || null,
-        sheet_code: generateSheetCode(),
+        sheet_code: aluno.sheet_code || generateSheetCode(),
       }));
 
       // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
