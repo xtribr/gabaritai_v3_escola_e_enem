@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, LogOut, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
-  Search, ChevronLeft, ChevronRight, Eye, X
+  Search, ChevronLeft, ChevronRight, Eye, X, Download
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -835,6 +835,17 @@ export default function EscolaPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const params = new URLSearchParams();
+                        if (selectedTurma && selectedTurma !== 'all') params.set('turma', selectedTurma);
+                        window.open(`/api/admin/export-credentials?${params.toString()}`, '_blank');
+                      }}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Exportar Credenciais
+                    </Button>
                   </div>
                 </div>
               </CardHeader>
