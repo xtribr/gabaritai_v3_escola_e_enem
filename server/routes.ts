@@ -4926,7 +4926,7 @@ Para cada disciplina:
       // Buscar alunos da tabela students
       let query = supabaseAdmin
         .from('students')
-        .select('id, name, matricula, turma')
+        .select('id, name, matricula, turma, sheet_code')
         .eq('school_id', school_id)
         .order('name');
 
@@ -4947,13 +4947,31 @@ Para cada disciplina:
       console.log(`[GABARITOS] Gerando ${alunos.length} gabaritos XTRI para turma: ${turma || 'selecionados'}`);
 
       // Converter alunos para formato esperado pelo generateBatchPDF
+      // Usa sheet_code existente do banco, gera novo apenas se não tiver
       const studentsForPdf = alunos.map(aluno => ({
         batch_id: 'admin-generated',
         enrollment_code: aluno.matricula || null,
         student_name: aluno.name || 'Sem nome',
         class_name: aluno.turma || null,
-        sheet_code: generateSheetCode(),
+        sheet_code: aluno.sheet_code || generateSheetCode(),
       }));
+
+      // Salvar sheet_codes gerados de volta no banco (para alunos que não tinham)
+      const alunosSemCodigo = alunos.filter((a, i) => !a.sheet_code && studentsForPdf[i].sheet_code);
+      if (alunosSemCodigo.length > 0) {
+        console.log(`[GABARITOS] Salvando ${alunosSemCodigo.length} sheet_codes novos no banco`);
+        for (let i = 0; i < alunos.length; i++) {
+          if (!alunos[i].sheet_code && studentsForPdf[i].sheet_code) {
+            const { error: updateError } = await supabaseAdmin
+              .from('students')
+              .update({ sheet_code: studentsForPdf[i].sheet_code })
+              .eq('id', alunos[i].id);
+            if (updateError) {
+              console.error(`[GABARITOS] Erro ao salvar sheet_code para ${alunos[i].name}:`, updateError);
+            }
+          }
+        }
+      }
 
       // Gerar PDF com template XTRI (com marcadores OMR, QR codes, letras nas bolhas)
       const examName = dia ? `Dia ${dia}` : 'Simulado ENEM';
