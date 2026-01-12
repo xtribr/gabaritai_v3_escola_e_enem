@@ -30,7 +30,8 @@ import {
 import {
   LogOut, TrendingUp, TrendingDown, Minus, BookOpen, Brain, Calculator, Leaf,
   Target, CheckCircle2, XCircle, MinusCircle, History, Eye, Calendar, BarChart3,
-  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb, Download, FileText
+  AlertTriangle, Users, Award, GraduationCap, ArrowRight, Lightbulb, Download, FileText,
+  Lock, Unlock
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import {
@@ -131,8 +132,21 @@ interface StudyPlanArea {
     arquivo_url: string;
     arquivo_nome: string;
     arquivo_tipo: string;
+    status?: 'available' | 'locked' | 'mastered';
+    tri_min?: number;
+    tri_max?: number;
   }>;
-  meta_proxima_faixa: number;
+  listas_proximas?: Array<{
+    id: string;
+    titulo: string;
+    tri_min: number;
+    tri_max: number;
+    pontos_para_desbloquear: number;
+  }>;
+  meta_proxima_faixa: {
+    pontos_necessarios: number;
+    proxima_faixa: string;
+  };
 }
 
 interface StudyPlanData {
@@ -444,7 +458,7 @@ export default function StudentDashboard() {
 
       try {
         setStudyPlanLoading(true);
-        const response = await fetch(
+        const response = await authFetch(
           `/api/student/study-plan/${profile.id}/${ultimoResultado.exam_id}`
         );
         const data = await response.json();
@@ -966,12 +980,12 @@ export default function StudentDashboard() {
                             </p>
                           )}
 
-                          {/* Listas de Exercícios Recomendadas */}
+                          {/* Listas de Exercícios Disponíveis */}
                           {plan.listas_recomendadas && plan.listas_recomendadas.length > 0 && (
                             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                               <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                                <FileText className="h-3 w-3" />
-                                Listas de Exercícios:
+                                <Unlock className="h-3 w-3 text-green-500" />
+                                Listas Disponíveis ({plan.listas_recomendadas.length}):
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {plan.listas_recomendadas.map((lista) => (
@@ -983,10 +997,37 @@ export default function StudentDashboard() {
                                     className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
                                       ${areaConfig.colors.border} ${areaConfig.colors.text}
                                       hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors`}
+                                    title={lista.tri_min && lista.tri_max ? `Faixa TRI: ${lista.tri_min}-${lista.tri_max}` : ''}
                                   >
                                     <Download className="h-3 w-3" />
                                     {lista.titulo.replace(/Lista \d+ - /, '').replace(/\(\d+-\d+\)/, '').trim() || `Lista ${lista.ordem}`}
                                   </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Próximas Listas (Bloqueadas) */}
+                          {plan.listas_proximas && plan.listas_proximas.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                                <Lock className="h-3 w-3 text-gray-400" />
+                                Próximas Listas:
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {plan.listas_proximas.map((lista) => (
+                                  <div
+                                    key={lista.id}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
+                                      border-gray-300 text-gray-400 bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
+                                    title={`Desbloqueie subindo +${lista.pontos_para_desbloquear} pontos de TRI`}
+                                  >
+                                    <Lock className="h-3 w-3" />
+                                    <span>TRI {lista.tri_min}+</span>
+                                    <span className="text-[10px] ml-1 opacity-70">
+                                      (+{lista.pontos_para_desbloquear} pts)
+                                    </span>
+                                  </div>
                                 ))}
                               </div>
                             </div>
