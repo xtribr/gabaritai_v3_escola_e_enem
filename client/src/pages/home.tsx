@@ -3219,6 +3219,8 @@ export default function Home() {
     const formData = new FormData();
     formData.append("pdf", queuedFile.file);
 
+    console.log(`[BATCH] 📤 Enviando ${queuedFile.file.name}...`);
+
     // 1. Criar o job de processamento
     const response = await authFetch(uploadUrl("/api/process-pdf"), {
       method: "POST",
@@ -3226,16 +3228,18 @@ export default function Home() {
     });
 
     if (!response.ok) {
+      console.error(`[BATCH] ❌ Erro ao enviar PDF: ${response.status}`);
       throw new Error("Erro ao processar PDF");
     }
 
     const { jobId } = await response.json();
-    console.log(`[BATCH] Job criado para ${queuedFile.file.name}: ${jobId}`);
+    console.log(`[BATCH] ✅ Job criado: ${jobId}`);
 
     // 2. Poll para acompanhar o progresso
     const pollInterval = 1000;
     const maxAttempts = 300; // 5 minutos máximo
     let attempts = 0;
+    let lastProgress = -1;
 
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, pollInterval));
@@ -3243,10 +3247,17 @@ export default function Home() {
 
       const statusRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/status`));
       if (!statusRes.ok) {
+        console.error(`[BATCH] ❌ Erro ao verificar status: ${statusRes.status}`);
         throw new Error("Erro ao verificar status do processamento");
       }
 
       const statusData = await statusRes.json();
+
+      // Log apenas quando há mudança de progresso
+      if (statusData.progress !== lastProgress) {
+        console.log(`[BATCH] 📊 ${queuedFile.file.name}: ${statusData.status} - ${statusData.progress}% (${statusData.currentPage}/${statusData.totalPages}) - ${statusData.studentCount} alunos`);
+        lastProgress = statusData.progress;
+      }
 
       // Atualizar progresso na fila
       setFileQueue(prev => prev.map(f =>
@@ -3256,14 +3267,18 @@ export default function Home() {
       ));
 
       if (statusData.status === "completed") {
+        console.log(`[BATCH] 🎯 ${queuedFile.file.name} COMPLETO! Buscando resultados...`);
+
         // 3. Obter resultados finais
         const resultsRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/results`));
         if (!resultsRes.ok) {
+          console.error(`[BATCH] ❌ Erro ao obter resultados: ${resultsRes.status}`);
           throw new Error("Erro ao obter resultados do processamento");
         }
 
         const results = await resultsRes.json();
-        console.log(`[BATCH] ${queuedFile.file.name}: ${results.students?.length || 0} aluno(s) encontrado(s)`);
+        console.log(`[BATCH] 🎓 ${queuedFile.file.name}: ${results.students?.length || 0} aluno(s) encontrado(s)`);
+        console.log(`[BATCH] 📋 Dados:`, results);
 
         // Atualizar contagem de alunos na fila
         setFileQueue(prev => prev.map(f =>
@@ -3276,10 +3291,12 @@ export default function Home() {
       }
 
       if (statusData.status === "error") {
+        console.error(`[BATCH] ❌ Erro no processamento: ${statusData.errorMessage}`);
         throw new Error(statusData.errorMessage || "Erro no processamento do PDF");
       }
     }
 
+    console.error(`[BATCH] ⏰ Timeout após ${maxAttempts} tentativas`);
     throw new Error("Timeout: processamento demorou muito");
   };
 
