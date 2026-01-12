@@ -3219,6 +3219,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append("pdf", queuedFile.file);
 
+    // 1. Criar o job de processamento
     const response = await authFetch(uploadUrl("/api/process-pdf"), {
       method: "POST",
       body: formData,
@@ -3228,58 +3229,58 @@ export default function Home() {
       throw new Error("Erro ao processar PDF");
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
+    const { jobId } = await response.json();
+    console.log(`[BATCH] Job criado para ${queuedFile.file.name}: ${jobId}`);
 
-    if (!reader) {
-      throw new Error("Erro na leitura da resposta");
-    }
+    // 2. Poll para acompanhar o progresso
+    const pollInterval = 1000;
+    const maxAttempts = 300; // 5 minutos máximo
+    let attempts = 0;
 
-    let buffer = "";
-    const processedStudents: StudentData[] = [];
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      attempts++;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const statusRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/status`));
+      if (!statusRes.ok) {
+        throw new Error("Erro ao verificar status do processamento");
+      }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const statusData = await statusRes.json();
 
-      for (const line of lines) {
-        if (line.trim() && line.startsWith("data: ")) {
-          try {
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-            
-            const data = JSON.parse(jsonStr);
-            if (data.type === "progress") {
-              setFileQueue(prev => prev.map(f => 
-                f.id === queuedFile.id 
-                  ? { ...f, processedPages: data.currentPage }
-                  : f
-              ));
-            } else if (data.type === "student") {
-              processedStudents.push(data.student);
-              setFileQueue(prev => prev.map(f => 
-                f.id === queuedFile.id 
-                  ? { ...f, studentCount: processedStudents.length }
-                  : f
-              ));
-            } else if (data.type === "error") {
-              throw new Error(data.message || "Erro no processamento");
-            }
-          } catch (e) {
-            if (e instanceof SyntaxError) {
-              continue;
-            }
-            throw e;
-          }
+      // Atualizar progresso na fila
+      setFileQueue(prev => prev.map(f =>
+        f.id === queuedFile.id
+          ? { ...f, processedPages: statusData.currentPage }
+          : f
+      ));
+
+      if (statusData.status === "completed") {
+        // 3. Obter resultados finais
+        const resultsRes = await authFetch(uploadUrl(`/api/process-pdf/${jobId}/results`));
+        if (!resultsRes.ok) {
+          throw new Error("Erro ao obter resultados do processamento");
         }
+
+        const results = await resultsRes.json();
+        console.log(`[BATCH] ${queuedFile.file.name}: ${results.students?.length || 0} aluno(s) encontrado(s)`);
+
+        // Atualizar contagem de alunos na fila
+        setFileQueue(prev => prev.map(f =>
+          f.id === queuedFile.id
+            ? { ...f, studentCount: results.students?.length || 0 }
+            : f
+        ));
+
+        return results.students || [];
+      }
+
+      if (statusData.status === "error") {
+        throw new Error(statusData.errorMessage || "Erro no processamento do PDF");
       }
     }
 
-    return processedStudents;
+    throw new Error("Timeout: processamento demorou muito");
   };
 
   /**
