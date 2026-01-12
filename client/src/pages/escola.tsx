@@ -14,7 +14,8 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Loader2, LogOut, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
-  Search, ChevronLeft, ChevronRight, Eye, X, Download
+  Search, ChevronLeft, ChevronRight, Eye, X, Download,
+  BookOpen, CheckCircle2, XCircle, Filter
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -137,6 +138,40 @@ interface StudentResult {
   created_at: string;
 }
 
+// Interfaces para relatório de downloads de listas
+interface ListDownloadAluno {
+  studentId: string;
+  studentName: string;
+  studentNumber: string | null;
+  turma: string | null;
+  downloaded: boolean;
+  downloadedAt: string | null;
+}
+
+interface ListDownloadReport {
+  listId: string;
+  listTitle: string;
+  area: string;
+  triMin: number;
+  triMax: number;
+  totalAlunos: number;
+  totalDownloads: number;
+  percentDownloaded: number;
+  alunos: ListDownloadAluno[];
+}
+
+interface ListDownloadSummary {
+  totalListas: number;
+  totalAlunos: number;
+  mediaDownloads: number;
+}
+
+interface ListDownloadData {
+  success: boolean;
+  summary: ListDownloadSummary;
+  report: ListDownloadReport[];
+}
+
 // Helper functions
 function getComparacaoIcon(comparacao: string | null) {
   if (comparacao === 'acima') return <TrendingUp className="h-4 w-4 text-green-600" />;
@@ -199,6 +234,16 @@ export default function EscolaPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
+  // List downloads state
+  const [listDownloadsData, setListDownloadsData] = useState<ListDownloadData | null>(null);
+  const [loadingListDownloads, setLoadingListDownloads] = useState(false);
+  const [listDownloadFilters, setListDownloadFilters] = useState({
+    turma: 'all',
+    area: 'all',
+    onlyMissing: false,
+  });
+  const [expandedListId, setExpandedListId] = useState<string | null>(null);
+
   // Fetch dashboard data
   const fetchDashboard = useCallback(async () => {
     try {
@@ -259,11 +304,38 @@ export default function EscolaPage() {
     }
   }, [toast]);
 
+  // Fetch list downloads report
+  const fetchListDownloads = useCallback(async () => {
+    try {
+      setLoadingListDownloads(true);
+      const params = new URLSearchParams();
+      if (listDownloadFilters.turma !== 'all') params.append('turma', listDownloadFilters.turma);
+      if (listDownloadFilters.area !== 'all') params.append('area', listDownloadFilters.area);
+      if (listDownloadFilters.onlyMissing) params.append('onlyMissing', 'true');
+
+      const response = await authFetch(`/api/coordinator/list-downloads?${params.toString()}`);
+      if (!response.ok) throw new Error('Erro ao buscar relatório de downloads');
+      const data = await response.json();
+      setListDownloadsData(data);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoadingListDownloads(false);
+    }
+  }, [toast, listDownloadFilters]);
+
   // Initial load
   useEffect(() => {
     fetchDashboard();
     fetchResults();
   }, [fetchDashboard, fetchResults]);
+
+  // Load list downloads when tab changes to "listas"
+  useEffect(() => {
+    if (activeTab === 'listas') {
+      fetchListDownloads();
+    }
+  }, [activeTab, fetchListDownloads]);
 
   // Load turma alunos when modal opens
   useEffect(() => {
@@ -398,11 +470,12 @@ export default function EscolaPage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 max-w-xl">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
             <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
             <TabsTrigger value="resultados">Resultados</TabsTrigger>
             <TabsTrigger value="turmas">Turmas</TabsTrigger>
             <TabsTrigger value="alunos">Alunos</TabsTrigger>
+            <TabsTrigger value="listas">Listas</TabsTrigger>
           </TabsList>
 
           {/* TAB: Visão Geral */}
@@ -926,6 +999,203 @@ export default function EscolaPage() {
                       </div>
                     )}
                   </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Listas de Exercícios */}
+          <TabsContent value="listas" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-blue-500" />
+                  Relatório de Downloads de Listas
+                </CardTitle>
+                <CardDescription>
+                  Acompanhe quais alunos baixaram as listas de exercícios recomendadas
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Filtros */}
+                <div className="flex flex-wrap gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium">Filtros:</span>
+                  </div>
+                  <Select
+                    value={listDownloadFilters.turma}
+                    onValueChange={(value) => setListDownloadFilters(f => ({ ...f, turma: value }))}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Turma" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas as turmas</SelectItem>
+                      {dashboardData?.turmas.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={listDownloadFilters.area}
+                    onValueChange={(value) => setListDownloadFilters(f => ({ ...f, area: value }))}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Área" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas as áreas</SelectItem>
+                      <SelectItem value="LC">Linguagens (LC)</SelectItem>
+                      <SelectItem value="CH">Humanas (CH)</SelectItem>
+                      <SelectItem value="CN">Natureza (CN)</SelectItem>
+                      <SelectItem value="MT">Matemática (MT)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant={listDownloadFilters.onlyMissing ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setListDownloadFilters(f => ({ ...f, onlyMissing: !f.onlyMissing }))}
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Só quem não baixou
+                  </Button>
+                </div>
+
+                {loadingListDownloads ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : listDownloadsData ? (
+                  <>
+                    {/* Resumo */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600">{listDownloadsData.summary.totalListas}</div>
+                        <div className="text-sm text-muted-foreground">Listas Disponíveis</div>
+                      </div>
+                      <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600">{listDownloadsData.summary.totalAlunos}</div>
+                        <div className="text-sm text-muted-foreground">Alunos</div>
+                      </div>
+                      <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-purple-600">{listDownloadsData.summary.mediaDownloads}%</div>
+                        <div className="text-sm text-muted-foreground">Média de Downloads</div>
+                      </div>
+                    </div>
+
+                    {/* Lista de listas com relatório */}
+                    <div className="space-y-3">
+                      {listDownloadsData.report.map((list) => (
+                        <div key={list.listId} className="border rounded-lg overflow-hidden">
+                          {/* Header da lista (clicável) */}
+                          <div
+                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                            onClick={() => setExpandedListId(expandedListId === list.listId ? null : list.listId)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline" className={
+                                list.area === 'LC' ? 'border-blue-500 text-blue-500' :
+                                list.area === 'CH' ? 'border-yellow-500 text-yellow-500' :
+                                list.area === 'CN' ? 'border-green-500 text-green-500' :
+                                'border-red-500 text-red-500'
+                              }>
+                                {list.area}
+                              </Badge>
+                              <div>
+                                <div className="font-medium">{list.listTitle}</div>
+                                <div className="text-xs text-muted-foreground">TRI {list.triMin}-{list.triMax}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-lg font-bold ${
+                                    list.percentDownloaded >= 70 ? 'text-green-600' :
+                                    list.percentDownloaded >= 40 ? 'text-yellow-600' :
+                                    'text-red-600'
+                                  }`}>
+                                    {list.percentDownloaded}%
+                                  </span>
+                                  <Progress value={list.percentDownloaded} className="w-24 h-2" />
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {list.totalDownloads}/{list.totalAlunos} alunos
+                                </div>
+                              </div>
+                              <ChevronRight className={`h-5 w-5 transition-transform ${expandedListId === list.listId ? 'rotate-90' : ''}`} />
+                            </div>
+                          </div>
+
+                          {/* Detalhes dos alunos (expandido) */}
+                          {expandedListId === list.listId && (
+                            <div className="border-t bg-gray-50 dark:bg-gray-800/50 p-4">
+                              {list.alunos.length === 0 ? (
+                                <p className="text-center text-muted-foreground py-4">
+                                  {listDownloadFilters.onlyMissing
+                                    ? 'Todos os alunos já baixaram esta lista!'
+                                    : 'Nenhum aluno encontrado'}
+                                </p>
+                              ) : (
+                                <div className="max-h-64 overflow-y-auto">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Aluno</TableHead>
+                                        <TableHead>Matrícula</TableHead>
+                                        <TableHead>Turma</TableHead>
+                                        <TableHead>Data do Download</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {list.alunos.map((aluno) => (
+                                        <TableRow key={aluno.studentId}>
+                                          <TableCell>
+                                            {aluno.downloaded ? (
+                                              <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                            ) : (
+                                              <XCircle className="h-5 w-5 text-red-500" />
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="font-medium">{aluno.studentName}</TableCell>
+                                          <TableCell>{aluno.studentNumber || '-'}</TableCell>
+                                          <TableCell>{aluno.turma || '-'}</TableCell>
+                                          <TableCell>
+                                            {aluno.downloadedAt
+                                              ? new Date(aluno.downloadedAt).toLocaleDateString('pt-BR', {
+                                                  day: '2-digit',
+                                                  month: '2-digit',
+                                                  year: 'numeric',
+                                                  hour: '2-digit',
+                                                  minute: '2-digit',
+                                                })
+                                              : '-'}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {listDownloadsData.report.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>Nenhuma lista encontrada com os filtros selecionados</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Selecione filtros para ver o relatório</p>
+                  </div>
                 )}
               </CardContent>
             </Card>

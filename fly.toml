@@ -23,6 +23,13 @@ primary_region = "gru"
   min_machines_running = 1
   processes = ["app"]
 
+  # Sticky sessions - garante que todas as requisições do mesmo cliente
+  # vão para a mesma máquina (importante para jobs em memória)
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
 [checks]
   [checks.health]
     port = 8080

@@ -994,6 +994,14 @@ export default function StudentDashboard() {
                                     href={lista.arquivo_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    onClick={() => {
+                                      // Registrar download em background (não bloqueia o clique)
+                                      authFetch('/api/list-downloads', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ listId: lista.id }),
+                                      }).catch(() => {}); // Ignora erros silenciosamente
+                                    }}
                                     className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border
                                       ${areaConfig.colors.border} ${areaConfig.colors.text}
                                       hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors`}

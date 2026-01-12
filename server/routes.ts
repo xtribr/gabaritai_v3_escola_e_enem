@@ -7862,5 +7862,237 @@ Para cada disciplina:
     }
   });
 
+  // ============================================================================
+  // TRACKING DE DOWNLOADS DE LISTAS
+  // ============================================================================
+
+  // Endpoint para registrar download de lista pelo aluno
+  app.post("/api/list-downloads", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { listId } = req.body;
+
+      if (!listId) {
+        return res.status(400).json({ error: "listId é obrigatório" });
+      }
+
+      // Buscar dados do aluno
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, school_id, turma, role")
+        .eq("id", authReq.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      if (profile.role !== "student") {
+        return res.status(403).json({ error: "Apenas alunos podem registrar downloads" });
+      }
+
+      // Verificar se a lista existe
+      const { data: list, error: listError } = await supabaseAdmin
+        .from("exercise_lists")
+        .select("id")
+        .eq("id", listId)
+        .single();
+
+      if (listError || !list) {
+        return res.status(404).json({ error: "Lista não encontrada" });
+      }
+
+      // Registrar download (upsert para evitar duplicatas)
+      const { data: download, error: downloadError } = await supabaseAdmin
+        .from("list_downloads")
+        .upsert({
+          student_id: profile.id,
+          list_id: listId,
+          school_id: profile.school_id,
+          turma: profile.turma,
+          downloaded_at: new Date().toISOString(),
+        }, {
+          onConflict: "student_id,list_id",
+          ignoreDuplicates: false, // Atualiza downloaded_at se já existir
+        })
+        .select()
+        .single();
+
+      if (downloadError) {
+        console.error("[LIST_DOWNLOAD] Erro ao registrar:", downloadError);
+        return res.status(500).json({ error: "Erro ao registrar download" });
+      }
+
+      res.json({ success: true, download });
+    } catch (error: any) {
+      console.error("[LIST_DOWNLOAD] Erro:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Endpoint para coordenador ver relatório de downloads
+  app.get("/api/coordinator/list-downloads", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { turma, area, listId, onlyMissing } = req.query;
+
+      // Buscar school_id do coordenador
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        return res.status(404).json({ error: "Perfil não encontrado" });
+      }
+
+      const schoolId = profile.school_id;
+
+      // Buscar todas as listas disponíveis (com filtro opcional de área)
+      let listasQuery = supabaseAdmin
+        .from("exercise_lists")
+        .select("id, titulo, area, tri_min, tri_max, ordem");
+
+      if (area) {
+        listasQuery = listasQuery.eq("area", area);
+      }
+
+      if (listId) {
+        listasQuery = listasQuery.eq("id", listId);
+      }
+
+      const { data: listas, error: listasError } = await listasQuery.order("area").order("tri_min").order("ordem");
+
+      if (listasError) {
+        return res.status(500).json({ error: "Erro ao buscar listas" });
+      }
+
+      // Buscar todos os alunos da escola (com filtro opcional de turma)
+      let alunosQuery = supabaseAdmin
+        .from("profiles")
+        .select("id, name, student_number, turma")
+        .eq("role", "student")
+        .eq("school_id", schoolId);
+
+      if (turma) {
+        alunosQuery = alunosQuery.eq("turma", turma);
+      }
+
+      const { data: alunos, error: alunosError } = await alunosQuery.order("name");
+
+      if (alunosError) {
+        return res.status(500).json({ error: "Erro ao buscar alunos" });
+      }
+
+      // Buscar todos os downloads da escola
+      let downloadsQuery = supabaseAdmin
+        .from("list_downloads")
+        .select("student_id, list_id, downloaded_at")
+        .eq("school_id", schoolId);
+
+      if (turma) {
+        downloadsQuery = downloadsQuery.eq("turma", turma);
+      }
+
+      const { data: downloads, error: downloadsError } = await downloadsQuery;
+
+      if (downloadsError) {
+        return res.status(500).json({ error: "Erro ao buscar downloads" });
+      }
+
+      // Criar mapa de downloads para busca rápida
+      const downloadMap = new Map<string, string>(); // key: "studentId-listId", value: downloaded_at
+      for (const d of downloads || []) {
+        downloadMap.set(`${d.student_id}-${d.list_id}`, d.downloaded_at);
+      }
+
+      // Montar relatório por lista
+      const report = (listas || []).map(lista => {
+        const alunosStatus = (alunos || []).map(aluno => {
+          const downloadedAt = downloadMap.get(`${aluno.id}-${lista.id}`);
+          return {
+            studentId: aluno.id,
+            studentName: aluno.name,
+            studentNumber: aluno.student_number,
+            turma: aluno.turma,
+            downloaded: !!downloadedAt,
+            downloadedAt: downloadedAt || null,
+          };
+        });
+
+        // Filtrar apenas quem não baixou se solicitado
+        const filteredAlunos = onlyMissing === "true"
+          ? alunosStatus.filter(a => !a.downloaded)
+          : alunosStatus;
+
+        const totalAlunos = alunosStatus.length;
+        const totalDownloads = alunosStatus.filter(a => a.downloaded).length;
+
+        return {
+          listId: lista.id,
+          listTitle: lista.titulo,
+          area: lista.area,
+          triMin: lista.tri_min,
+          triMax: lista.tri_max,
+          totalAlunos,
+          totalDownloads,
+          percentDownloaded: totalAlunos > 0 ? Math.round((totalDownloads / totalAlunos) * 100) : 0,
+          alunos: filteredAlunos,
+        };
+      });
+
+      // Resumo geral
+      const summary = {
+        totalListas: report.length,
+        totalAlunos: alunos?.length || 0,
+        mediaDownloads: report.length > 0
+          ? Math.round(report.reduce((acc, r) => acc + r.percentDownloaded, 0) / report.length)
+          : 0,
+      };
+
+      res.json({ success: true, summary, report });
+    } catch (error: any) {
+      console.error("[COORDINATOR_DOWNLOADS] Erro:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Endpoint para buscar turmas disponíveis (para filtro)
+  app.get("/api/coordinator/turmas", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id")
+        .eq("id", authReq.user.id)
+        .single();
+
+      if (!profile?.school_id) {
+        return res.status(404).json({ error: "Escola não encontrada" });
+      }
+
+      const { data: turmas, error } = await supabaseAdmin
+        .from("profiles")
+        .select("turma")
+        .eq("school_id", profile.school_id)
+        .eq("role", "student")
+        .not("turma", "is", null);
+
+      if (error) {
+        return res.status(500).json({ error: "Erro ao buscar turmas" });
+      }
+
+      // Extrair turmas únicas
+      const uniqueTurmas = [...new Set((turmas || []).map(t => t.turma).filter(Boolean))].sort();
+
+      res.json({ success: true, turmas: uniqueTurmas });
+    } catch (error: any) {
+      console.error("[COORDINATOR_TURMAS] Erro:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

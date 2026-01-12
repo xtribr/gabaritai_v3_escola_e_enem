@@ -1216,7 +1216,7 @@ export default function Home() {
     }
   }, [toast]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open: openFilePicker } = useDropzone({
     onDrop,
     accept: {
       "application/pdf": [".pdf"],
@@ -1225,6 +1225,8 @@ export default function Home() {
       "image/webp": [".webp"],
     },
     multiple: true,
+    noClick: false,
+    noKeyboard: false,
   });
 
   // Função helper para adicionar logs
@@ -3482,11 +3484,8 @@ export default function Home() {
   const handleAddMoreFilesToBatch = () => {
     // Ativar modo acumulação para próximos uploads
     setBatchAccumulationMode(true);
-    // Trigger file input
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    if (fileInput) {
-      fileInput.click();
-    }
+    // Usar a função open do dropzone
+    openFilePicker();
   };
 
   const removeFromQueue = (id: string) => {
@@ -3689,34 +3688,64 @@ export default function Home() {
       return;
     }
 
-    // Restaurar dados
-    setStudents(avaliacao.students);
-    setAnswerKey(avaliacao.answerKey);
-    setQuestionContents(avaliacao.questionContents || []);
+    // MESCLAR alunos em vez de substituir (evita perder alunos já processados)
+    setStudents(prev => {
+      // Criar Set de matrículas existentes para evitar duplicatas
+      const matriculasExistentes = new Set(prev.map(s => s.matricula || s.studentNumber));
 
-    // Restaurar TRI scores
+      // Filtrar alunos do save que não existem ainda
+      const novosAlunos = avaliacao.students.filter(s => {
+        const matricula = s.matricula || s.studentNumber;
+        return !matriculasExistentes.has(matricula);
+      });
+
+      console.log(`[Histórico] Mesclando: ${prev.length} existentes + ${novosAlunos.length} novos (${avaliacao.students.length - novosAlunos.length} duplicatas ignoradas)`);
+
+      // Retornar alunos existentes + novos
+      return [...prev, ...novosAlunos];
+    });
+
+    // Gabarito e conteúdos: só atualiza se não tiver ainda
+    setAnswerKey(prev => prev.length > 0 ? prev : avaliacao.answerKey);
+    setQuestionContents(prev => prev.length > 0 ? prev : (avaliacao.questionContents || []));
+
+    // MESCLAR TRI scores (não substituir)
     if (avaliacao.triScores) {
-      const triMap = new Map<string, number>(avaliacao.triScores);
-      setTriScores(triMap);
+      setTriScores(prev => {
+        const newMap = new Map(prev);
+        avaliacao.triScores!.forEach(([id, score]) => {
+          if (!newMap.has(id)) {
+            newMap.set(id, score);
+          }
+        });
+        return newMap;
+      });
     }
-    
+
     if (avaliacao.triScoresByArea) {
-      const triByAreaMap = new Map<string, Record<string, number>>(avaliacao.triScoresByArea);
-      setTriScoresByArea(triByAreaMap);
+      setTriScoresByArea(prev => {
+        const newMap = new Map(prev);
+        avaliacao.triScoresByArea!.forEach(([id, scores]) => {
+          if (!newMap.has(id)) {
+            newMap.set(id, scores);
+          }
+        });
+        return newMap;
+      });
     }
-    
-    // Restaurar template
+
+    // Restaurar template (só se não tiver)
     if (avaliacao.selectedTemplateIndex !== undefined) {
-      setSelectedTemplateIndex(avaliacao.selectedTemplateIndex);
+      setSelectedTemplateIndex(prev => prev >= 0 ? prev : avaliacao.selectedTemplateIndex!);
     }
-    
+
     // Marcar como carregada
     setAvaliacaoCarregada(avaliacao.id);
     setStatus("completed");
-    
+
     toast({
-      title: "Aplicação carregada",
-      description: `${avaliacao.totalAlunos} alunos e dados TRI restaurados.`,
+      title: "Alunos adicionados",
+      description: `Alunos do histórico mesclados com os existentes (duplicatas ignoradas).`,
     });
   };
 
