@@ -324,6 +324,30 @@ export default function EscolaPage() {
     }
   }, [toast, listDownloadFilters]);
 
+  // Download Excel com autenticação
+  const downloadTurmaExcel = useCallback(async (turma: string) => {
+    try {
+      toast({ title: 'Gerando Excel...', description: `Exportando dados da turma ${turma}` });
+      const response = await authFetch(`/api/escola/turmas/${encodeURIComponent(turma)}/export-excel`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erro ao exportar');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `turma_${turma.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({ title: 'Excel exportado!', description: `Arquivo da turma ${turma} baixado com sucesso` });
+    } catch (error: any) {
+      toast({ title: 'Erro ao exportar', description: error.message, variant: 'destructive' });
+    }
+  }, [toast]);
+
   // Initial load
   useEffect(() => {
     fetchDashboard();
@@ -870,9 +894,8 @@ export default function EscolaPage() {
                         variant="outline"
                         size="icon"
                         title="Exportar Excel"
-                        onClick={() => {
-                          window.open(`/api/escola/turmas/${encodeURIComponent(turma.turma || '')}/export-excel`, '_blank');
-                        }}
+                        className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        onClick={() => downloadTurmaExcel(turma.turma || '')}
                       >
                         <FileSpreadsheet className="h-4 w-4" />
                       </Button>
@@ -1233,9 +1256,8 @@ export default function EscolaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  window.open(`/api/escola/turmas/${encodeURIComponent(selectedTurmaModal || '')}/export-excel`, '_blank');
-                }}
+                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                onClick={() => downloadTurmaExcel(selectedTurmaModal || '')}
               >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Excel
