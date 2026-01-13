@@ -321,8 +321,6 @@ function TurmaCard({ turma, index, onViewAlunos, onExportExcel }: TurmaCardProps
         animation: `fadeSlideUp 0.5s ease-out ${index * 100}ms both`,
       }}
     >
-      <div className={`h-1.5 bg-gradient-to-r ${gradient}`} />
-
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -391,7 +389,6 @@ interface RankingCardProps {
 function RankingCard({ turmas }: RankingCardProps) {
   return (
     <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-      <div className="h-1.5 bg-gradient-to-r from-amber-400 to-yellow-500" />
       <div className="p-6">
         <div className="flex items-center gap-2 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center shadow-lg">
@@ -445,7 +442,6 @@ function TopAlunosCard({ alunos, type }: TopAlunosCardProps) {
 
   return (
     <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-      <div className={`h-1.5 bg-gradient-to-r ${gradient}`} />
       <div className="p-6">
         <div className="flex items-center gap-2 mb-2">
           <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
@@ -905,7 +901,6 @@ export default function EscolaPage() {
 
               {/* Gráfico TRI por Área */}
               <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-                <div className="h-1.5 bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC]" />
                 <div className="p-6">
                   <div className="flex items-center gap-2 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
@@ -946,7 +941,6 @@ export default function EscolaPage() {
 
               {/* Radar Chart */}
               <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-                <div className="h-1.5 bg-gradient-to-r from-indigo-500 to-violet-600" />
                 <div className="p-6">
                   <div className="flex items-center gap-2 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
@@ -988,7 +982,6 @@ export default function EscolaPage() {
 
               {/* TRI por Turma */}
               <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden lg:col-span-2">
-                <div className="h-1.5 bg-gradient-to-r from-emerald-500 to-teal-600" />
                 <div className="p-6">
                   <div className="flex items-center gap-2 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
@@ -1039,7 +1032,6 @@ export default function EscolaPage() {
           {/* TAB: Resultados */}
           <TabsContent value="resultados">
             <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-              <div className="h-1.5 bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC]" />
               <div className="p-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                   <div>
@@ -1168,7 +1160,6 @@ export default function EscolaPage() {
           {/* TAB: Alunos */}
           <TabsContent value="alunos">
             <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-              <div className="h-1.5 bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC]" />
               <div className="p-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">Lista de Alunos</h2>
@@ -1298,7 +1289,6 @@ export default function EscolaPage() {
           {/* TAB: Listas */}
           <TabsContent value="listas" className="space-y-6">
             <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-              <div className="h-1.5 bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC]" />
               <div className="p-6">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
