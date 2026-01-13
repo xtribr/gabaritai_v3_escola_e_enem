@@ -362,6 +362,20 @@ export default function EscolaPage() {
     return match ? match[1] : turma;
   };
 
+  // Helper: Check if turma matches allowed series
+  const isTurmaAllowed = (turma: string | null): boolean => {
+    const allowedSeries = profile?.allowed_series;
+    if (!allowedSeries || allowedSeries.length === 0) return true;
+
+    const serie = extractSerie(turma);
+    if (!serie) return false;
+
+    return allowedSeries.some(allowed =>
+      serie.toLowerCase().includes(allowed.toLowerCase().replace(/[ªº]/g, '').trim()) ||
+      allowed.toLowerCase().includes(serie.toLowerCase().replace(/[ªº]/g, '').trim())
+    );
+  };
+
   // Filter results
   const filteredResults = results.filter(r => {
     if (selectedSerie !== 'all' && extractSerie(r.turma) !== selectedSerie) return false;
@@ -388,13 +402,18 @@ export default function EscolaPage() {
     return turma !== null && turma !== 'null' && turma.trim() !== '' && turma !== 'Sem turma';
   };
 
-  // Get unique series from results (excluding null/invalid)
-  const availableSeries = [...new Set(results.map(r => extractSerie(r.turma)).filter(s => s && s !== 'Sem série' && s !== 'null'))].sort();
+  // Get unique series from results (excluding null/invalid), filtered by allowed series
+  const availableSeries = [...new Set(
+    results
+      .map(r => extractSerie(r.turma))
+      .filter(s => s && s !== 'Sem série' && s !== 'null')
+      .filter(s => isTurmaAllowed(s))
+  )].sort();
 
-  // Get turmas for selected serie (excluding null/invalid)
+  // Get turmas for selected serie (excluding null/invalid), filtered by allowed series
   const availableTurmas = selectedSerie === 'all'
-    ? [...new Set(results.map(r => r.turma).filter(isValidTurma))].sort()
-    : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma))].sort();
+    ? [...new Set(results.map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort()
+    : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort();
 
   if (loadingDashboard && !dashboardData) {
     return (
@@ -824,7 +843,9 @@ export default function EscolaPage() {
           {/* TAB: Turmas */}
           <TabsContent value="turmas">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {dashboardData?.turmaRanking.map((turma, index) => (
+              {dashboardData?.turmaRanking
+                .filter(turma => isTurmaAllowed(turma.turma))
+                .map((turma, index) => (
                 <Card key={turma.turma || `turma-${index}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
