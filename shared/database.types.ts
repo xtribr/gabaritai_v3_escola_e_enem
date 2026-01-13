@@ -19,6 +19,7 @@ export interface Profile {
   student_number: string | null;
   turma: string | null;
   must_change_password: boolean;
+  allowed_series: string[] | null;
   created_at: string;
 }
 

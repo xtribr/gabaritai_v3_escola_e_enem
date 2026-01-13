@@ -28,6 +28,7 @@ import {
   updateStudentAnswers,
 } from "./src/answerSheetBatch.js";
 import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
+import { isTurmaAllowed } from "./lib/seriesFilter.js";
 import {
   transformStudentsForSupabase,
   transformStudentFromSupabase,
@@ -6202,8 +6203,8 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
   app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      // Por enquanto, retorna todos os resultados (após implementar auth, filtrar por school_id)
-      // Em produção: extrair school_id do token JWT e filtrar
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+      console.log(`[ESCOLA RESULTS] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
       // Buscar student_answers com info do exame
       const { data: answers, error: answersError } = await supabaseAdmin
@@ -6232,8 +6233,13 @@ Para cada disciplina:
         return res.status(500).json({ error: answersError.message });
       }
 
+      // Filter by allowed_series if coordinator has restrictions
+      const filteredAnswers = (answers || []).filter((a: any) =>
+        isTurmaAllowed(a.turma, allowedSeries)
+      );
+
       // Formatar resultados
-      const results = (answers || []).map((a: any) => ({
+      const results = filteredAnswers.map((a: any) => ({
         id: a.id,
         student_name: a.student_name,
         student_number: a.student_number,
@@ -6293,6 +6299,9 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
   app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+      console.log(`[ESCOLA DASHBOARD] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
+
       // Buscar todos os resultados
       const { data: answers, error: answersError } = await supabaseAdmin
         .from("student_answers")
@@ -6313,7 +6322,12 @@ Para cada disciplina:
 
       if (answersError) throw answersError;
 
-      const results = answers || [];
+      // Filter by allowed_series if coordinator has restrictions
+      const filteredAnswers = (answers || []).filter((a: any) =>
+        isTurmaAllowed(a.turma, allowedSeries)
+      );
+
+      const results = filteredAnswers;
 
       // Extrair séries das turmas (ex: "1ª Série A" -> "1ª Série")
       const extractSerie = (turma: string | null): string => {
@@ -6476,6 +6490,15 @@ Para cada disciplina:
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+
+      // Verify coordinator has access to this turma
+      if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
+        return res.status(403).json({
+          error: "Acesso negado a esta turma",
+          code: "SERIES_ACCESS_DENIED"
+        });
+      }
 
       // Buscar resultados da turma
       const { data: answers, error } = await supabaseAdmin
@@ -6567,16 +6590,25 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/escola/turmas/:turma/export-excel - Exportar resultados da turma em Excel
+  // GET /api/escola/turmas/:turma/export-excel - Exportar notas da turma para Excel
   // PROTEGIDO: Apenas school_admin e super_admin
   app.get("/api/escola/turmas/:turma/export-excel", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
+      const allowedSeries = (req as any).profile?.allowed_series || null;
 
-      console.log(`[EXPORT TURMA] Exportando Excel para turma: ${decodedTurma}`);
+      // Verify coordinator has access to this turma
+      if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
+        return res.status(403).json({
+          error: "Acesso negado a esta turma",
+          code: "SERIES_ACCESS_DENIED"
+        });
+      }
 
-      // Buscar resultados da turma
+      console.log(`[ESCOLA EXPORT EXCEL] Exportando turma: ${decodedTurma}`);
+
+      // Buscar resultados da turma com todos os dados
       const { data: answers, error } = await supabaseAdmin
         .from("student_answers")
         .select(`
@@ -6587,12 +6619,14 @@ Para cada disciplina:
           correct_answers,
           wrong_answers,
           blank_answers,
+          answers,
           tri_lc,
           tri_ch,
           tri_cn,
           tri_mt,
+          confidence,
           created_at,
-          exams(title)
+          exams(id, title, answer_key)
         `)
         .eq("turma", decodedTurma)
         .order("correct_answers", { ascending: false });
@@ -6605,147 +6639,79 @@ Para cada disciplina:
         return res.status(404).json({ error: "Nenhum resultado encontrado para esta turma" });
       }
 
-      // Importar ExcelJS dinamicamente
-      const ExcelJS = await import("exceljs");
-      const workbook = new ExcelJS.default.Workbook();
-      workbook.creator = "GabaritAI";
-      workbook.created = new Date();
+      // Agrupar por aluno (pegar melhor resultado)
+      const studentBest: Record<string, any> = {};
+      results.forEach((r: any) => {
+        const key = r.student_number || r.student_name;
+        if (!studentBest[key] || (r.correct_answers || 0) > (studentBest[key].correct_answers || 0)) {
+          studentBest[key] = r;
+        }
+      });
 
-      const sheet = workbook.addWorksheet(`Turma ${decodedTurma}`);
+      // Converter para formato do ExcelExporter
+      const students = Object.values(studentBest)
+        .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
+        .map((r: any) => ({
+          id: r.id,
+          studentNumber: r.student_number || "",
+          studentName: r.student_name || "",
+          turma: r.turma,
+          answers: r.answers || [],
+          correctAnswers: r.correct_answers || 0,
+          wrongAnswers: r.wrong_answers || 0,
+          blankAnswers: r.blank_answers || 0,
+          score: r.correct_answers ? (r.correct_answers / 90) * 10 : 0, // TCT score
+          confidence: r.confidence || 0,
+          pageNumber: 1,
+        }));
 
-      // Cabeçalhos
-      const headers = [
-        "#",
-        "Nome",
-        "Matrícula",
-        "Prova",
-        "Data",
-        "Acertos",
-        "Erros",
-        "Brancos",
-        "LC (TRI)",
-        "CH (TRI)",
-        "CN (TRI)",
-        "MT (TRI)",
-      ];
-      sheet.addRow(headers);
+      // Obter gabarito da primeira prova (se disponível)
+      const firstExam = results[0]?.exams;
+      const answerKey = firstExam?.answer_key || [];
 
-      // Formatar cabeçalho
-      const headerRow = sheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-      headerRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF4472C4" },
-      };
-      headerRow.alignment = { vertical: "middle", horizontal: "center" };
-      headerRow.height = 22;
+      // Preparar TRI scores
+      const triScores = new Map<string, number>();
+      const triScoresByArea = new Map<string, Record<string, number>>();
 
-      // Calcular média para formatação condicional
-      const totalAcertos = results.reduce((sum: number, r: any) => sum + (r.correct_answers || 0), 0);
-      const mediaAcertos = results.length > 0 ? totalAcertos / results.length : 0;
-
-      // Adicionar dados
-      results.forEach((r: any, index: number) => {
-        const examTitle = r.exams?.title || "Sem título";
-        const dataFormatada = new Date(r.created_at).toLocaleDateString("pt-BR");
-
-        const row = sheet.addRow([
-          index + 1,
-          r.student_name || "",
-          r.student_number || "",
-          examTitle,
-          dataFormatada,
-          r.correct_answers ?? "-",
-          r.wrong_answers ?? "-",
-          r.blank_answers ?? "-",
-          r.tri_lc?.toFixed(0) ?? "-",
-          r.tri_ch?.toFixed(0) ?? "-",
-          r.tri_cn?.toFixed(0) ?? "-",
-          r.tri_mt?.toFixed(0) ?? "-",
-        ]);
-
-        // Formatação condicional para acertos
-        const acertosCell = row.getCell(6);
-        const acertos = r.correct_answers || 0;
-
-        if (acertos >= mediaAcertos * 1.2) {
-          // Acima de 20% da média = verde
-          acertosCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-          acertosCell.font = { color: { argb: "FF006100" }, bold: true };
-        } else if (acertos < mediaAcertos * 0.8) {
-          // Abaixo de 80% da média = vermelho
-          acertosCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
-          acertosCell.font = { color: { argb: "FF9C0006" }, bold: true };
+      Object.values(studentBest).forEach((r: any) => {
+        // TRI geral (média das 4 áreas)
+        const triValues = [r.tri_lc, r.tri_ch, r.tri_cn, r.tri_mt].filter(v => v != null);
+        if (triValues.length > 0) {
+          const triMedia = triValues.reduce((a, b) => a + b, 0) / triValues.length;
+          triScores.set(r.id, triMedia);
         }
 
-        // Formatação para TRI (verde se >= 650, amarelo 500-650, vermelho < 500)
-        [9, 10, 11, 12].forEach(colIdx => {
-          const cell = row.getCell(colIdx);
-          const value = parseFloat(String(cell.value)) || 0;
-          if (value >= 650) {
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-            cell.font = { color: { argb: "FF006100" }, bold: true };
-          } else if (value >= 500) {
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE699" } };
-            cell.font = { color: { argb: "FF9C5700" } };
-          } else if (value > 0) {
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC7CE" } };
-            cell.font = { color: { argb: "FF9C0006" } };
-          }
+        // TRI por área
+        triScoresByArea.set(r.id, {
+          LC: r.tri_lc || 0,
+          CH: r.tri_ch || 0,
+          CN: r.tri_cn || 0,
+          MT: r.tri_mt || 0,
         });
       });
 
-      // Adicionar linha de resumo
-      sheet.addRow([]);
-      const resumoRow = sheet.addRow([
-        "",
-        "RESUMO",
-        `${results.length} alunos`,
-        "",
-        "",
-        `Média: ${mediaAcertos.toFixed(1)}`,
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ]);
-      resumoRow.font = { bold: true };
-      resumoRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
+      // Gerar Excel
+      const excelBuffer = await ExcelExporter.generateExcel({
+        students,
+        answerKey,
+        includeTRI: true,
+        triScores,
+        triScoresByArea,
+      });
 
-      // Ajustar larguras das colunas
-      sheet.getColumn(1).width = 5;   // #
-      sheet.getColumn(2).width = 30;  // Nome
-      sheet.getColumn(3).width = 15;  // Matrícula
-      sheet.getColumn(4).width = 20;  // Prova
-      sheet.getColumn(5).width = 12;  // Data
-      sheet.getColumn(6).width = 10;  // Acertos
-      sheet.getColumn(7).width = 8;   // Erros
-      sheet.getColumn(8).width = 10;  // Brancos
-      sheet.getColumn(9).width = 10;  // LC
-      sheet.getColumn(10).width = 10; // CH
-      sheet.getColumn(11).width = 10; // CN
-      sheet.getColumn(12).width = 10; // MT
-
-      // Congelar primeira linha
-      sheet.views = [{ state: "frozen", ySplit: 1 }];
-
-      // Gerar buffer e enviar
-      const buffer = await workbook.xlsx.writeBuffer();
-
-      const filename = `turma_${decodedTurma.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      // Sanitizar nome da turma para o arquivo
+      const safeTurmaName = decodedTurma.replace(/[^a-zA-Z0-9áéíóúâêîôûàèìòùãõäëïöüçÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÃÕÄËÏÖÜÇ\s-]/g, "").replace(/\s+/g, "_");
+      const fileName = `Notas_${safeTurmaName}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(Buffer.from(buffer));
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.send(excelBuffer);
 
-      console.log(`[EXPORT TURMA] Excel gerado com sucesso: ${results.length} resultados`);
+      console.log(`[ESCOLA EXPORT EXCEL] Exportado com sucesso: ${students.length} alunos`);
 
     } catch (error: any) {
-      console.error("[EXPORT TURMA] Erro:", error);
-      res.status(500).json({ error: "Erro ao exportar Excel", details: error.message });
+      console.error("[ESCOLA EXPORT EXCEL] Erro:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -7768,6 +7734,206 @@ Para cada disciplina:
     } catch (error: any) {
       console.error("[DELETE SIMULADO] Erro:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ======================================== COORDINATOR MANAGEMENT ENDPOINTS ========================================
+
+  interface CoordinatorInput {
+    email: string;
+    name: string;
+    password: string;
+    school_id: string;
+    allowed_series: string[] | null; // null = full access
+  }
+
+  // POST /api/admin/coordinators - Create coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.post("/api/admin/coordinators", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { email, name, password, school_id, allowed_series } = req.body as CoordinatorInput;
+
+      if (!email || !name || !password || !school_id) {
+        return res.status(400).json({ error: "Email, nome, senha e escola são obrigatórios" });
+      }
+
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Senha deve ter pelo menos 8 caracteres" });
+      }
+
+      // Validate school exists
+      const { data: school, error: schoolError } = await supabaseAdmin
+        .from("schools")
+        .select("id, name")
+        .eq("id", school_id)
+        .single();
+
+      if (schoolError || !school) {
+        return res.status(400).json({ error: "Escola não encontrada" });
+      }
+
+      // Create auth user
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, role: "school_admin", school_id }
+      });
+
+      if (authError) {
+        console.error("[COORDINATOR] Auth error:", authError.message);
+        return res.status(500).json({ error: "Erro ao criar usuário", details: authError.message });
+      }
+
+      // Update profile with allowed_series (trigger already created base profile)
+      if (authUser.user && allowed_series !== undefined) {
+        await supabaseAdmin.from("profiles").update({ allowed_series }).eq("id", authUser.user.id);
+      }
+
+      res.json({
+        success: true,
+        coordinator: { id: authUser.user?.id, email, name, school_id, allowed_series }
+      });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno ao criar coordenador" });
+    }
+  });
+
+  // GET /api/admin/coordinators - List coordinators
+  // PROTEGIDO: Apenas super_admin
+  app.get("/api/admin/coordinators", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { school_id } = req.query;
+
+      let query = supabaseAdmin
+        .from("profiles")
+        .select(`id, email, name, role, school_id, allowed_series, created_at, schools!profiles_school_id_fkey (id, name)`)
+        .eq("role", "school_admin")
+        .order("created_at", { ascending: false });
+
+      if (school_id) {
+        query = query.eq("school_id", school_id);
+      }
+
+      const { data: coordinators, error } = await query;
+
+      if (error) {
+        console.error("[COORDINATOR] List error:", error);
+        return res.status(500).json({ error: "Erro ao listar coordenadores" });
+      }
+
+      res.json({ success: true, coordinators: coordinators || [] });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  // PUT /api/admin/coordinators/:id - Update coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.put("/api/admin/coordinators/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, allowed_series, school_id } = req.body;
+
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (allowed_series !== undefined) updates.allowed_series = allowed_series;
+      if (school_id !== undefined) updates.school_id = school_id;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "Nenhum campo para atualizar" });
+      }
+
+      const { data: profile, error } = await supabaseAdmin
+        .from("profiles")
+        .update(updates)
+        .eq("id", id)
+        .eq("role", "school_admin")
+        .select()
+        .single();
+
+      if (error || !profile) {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      // Update auth user metadata if name or school_id changed
+      if (name || school_id) {
+        const metadataUpdates: Record<string, string> = {};
+        if (name) metadataUpdates.name = name;
+        if (school_id) metadataUpdates.school_id = school_id;
+        await supabaseAdmin.auth.admin.updateUserById(id, { user_metadata: metadataUpdates });
+      }
+
+      res.json({ success: true, coordinator: profile });
+    } catch (error) {
+      console.error("[COORDINATOR] Update error:", error);
+      res.status(500).json({ error: "Erro ao atualizar coordenador" });
+    }
+  });
+
+  // DELETE /api/admin/coordinators/:id - Delete coordinator
+  // PROTEGIDO: Apenas super_admin
+  app.delete("/api/admin/coordinators/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", id)
+        .single();
+
+      if (!profile || profile.role !== "school_admin") {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+
+      if (error) {
+        console.error("[COORDINATOR] Delete error:", error);
+        return res.status(500).json({ error: "Erro ao excluir coordenador" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[COORDINATOR] Error:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  // POST /api/admin/coordinators/:id/reset-password - Reset coordinator password
+  // PROTEGIDO: Apenas super_admin
+  app.post("/api/admin/coordinators/:id/reset-password", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { password } = req.body;
+
+      if (!password || password.length < 8) {
+        return res.status(400).json({ error: "Senha deve ter pelo menos 8 caracteres" });
+      }
+
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role, email")
+        .eq("id", id)
+        .single();
+
+      if (!profile || profile.role !== "school_admin") {
+        return res.status(404).json({ error: "Coordenador não encontrado" });
+      }
+
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
+
+      if (error) {
+        return res.status(500).json({ error: "Erro ao resetar senha" });
+      }
+
+      res.json({ success: true, email: profile.email });
+    } catch (error) {
+      console.error("[COORDINATOR] Reset password error:", error);
+      res.status(500).json({ error: "Erro interno" });
     }
   });
 

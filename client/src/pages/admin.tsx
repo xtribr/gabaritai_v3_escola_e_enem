@@ -92,6 +92,17 @@ interface Simulado {
   alunos_count?: number;
 }
 
+interface Coordinator {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  school_id: string | null;
+  allowed_series: string[] | null;
+  created_at: string;
+  schools?: { id: string; name: string } | null;
+}
+
 export default function AdminPage() {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('escolas');
@@ -154,6 +165,22 @@ export default function AdminPage() {
   // Novo Aluno states
   const [showAlunoModal, setShowAlunoModal] = useState(false);
   const [alunoForm, setAlunoForm] = useState({ nome: '', matricula: '', turma: '' });
+
+  // Coordinator states
+  const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
+  const [isLoadingCoordinators, setIsLoadingCoordinators] = useState(false);
+  const [showCoordinatorModal, setShowCoordinatorModal] = useState(false);
+  const [coordinatorToEdit, setCoordinatorToEdit] = useState<Coordinator | null>(null);
+  const [coordinatorToDelete, setCoordinatorToDelete] = useState<Coordinator | null>(null);
+  const [coordinatorForm, setCoordinatorForm] = useState({
+    email: '',
+    name: '',
+    password: '',
+    school_id: '',
+    allowed_series: [] as string[]
+  });
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState<Coordinator | null>(null);
+  const [newCoordinatorPassword, setNewCoordinatorPassword] = useState('');
 
   const isSuperAdmin = profile?.role === 'super_admin';
 
@@ -557,6 +584,115 @@ export default function AdminPage() {
     }
   };
 
+  // Fetch coordinators
+  const fetchCoordinators = useCallback(async () => {
+    setIsLoadingCoordinators(true);
+    try {
+      const response = await authFetch('/api/admin/coordinators');
+      const data = await response.json();
+      if (data.success) {
+        setCoordinators(data.coordinators);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar coordenadores:', error);
+    } finally {
+      setIsLoadingCoordinators(false);
+    }
+  }, []);
+
+  // Save coordinator (create/update)
+  const handleSaveCoordinator = async () => {
+    setIsActionLoading(true);
+    try {
+      const method = coordinatorToEdit ? 'PUT' : 'POST';
+      const url = coordinatorToEdit
+        ? `/api/admin/coordinators/${coordinatorToEdit.id}`
+        : '/api/admin/coordinators';
+
+      const body = coordinatorToEdit
+        ? {
+            name: coordinatorForm.name,
+            school_id: coordinatorForm.school_id || null,
+            allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
+          }
+        : {
+            email: coordinatorForm.email,
+            name: coordinatorForm.name,
+            password: coordinatorForm.password,
+            school_id: coordinatorForm.school_id,
+            allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
+          };
+
+      const response = await authFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchCoordinators();
+        setShowCoordinatorModal(false);
+        setCoordinatorToEdit(null);
+        setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar coordenador:', error);
+      alert('Erro ao salvar coordenador');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Delete coordinator
+  const handleDeleteCoordinator = async () => {
+    if (!coordinatorToDelete) return;
+    setIsActionLoading(true);
+    try {
+      const response = await authFetch(`/api/admin/coordinators/${coordinatorToDelete.id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        fetchCoordinators();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao excluir coordenador:', error);
+      alert('Erro ao excluir coordenador');
+    } finally {
+      setIsActionLoading(false);
+      setCoordinatorToDelete(null);
+    }
+  };
+
+  // Reset coordinator password
+  const handleResetCoordinatorPassword = async () => {
+    if (!showResetPasswordModal || !newCoordinatorPassword) return;
+    setIsActionLoading(true);
+    try {
+      const response = await authFetch(`/api/admin/coordinators/${showResetPasswordModal.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newCoordinatorPassword }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert(`Senha alterada com sucesso para ${data.email}`);
+        setShowResetPasswordModal(null);
+        setNewCoordinatorPassword('');
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao resetar senha:', error);
+      alert('Erro ao resetar senha');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   // Handle school expansion
   const handleSchoolExpand = (schoolId: string) => {
     if (expandedSchoolId === schoolId) {
@@ -607,6 +743,14 @@ export default function AdminPage() {
       fetchStudentsForSchool(expandedSchoolId, 1);
     }
   }, [showResultsModal]);
+
+  // Load coordinators when tab changes
+  useEffect(() => {
+    if (activeTab === 'coordenadores') {
+      fetchCoordinators();
+      fetchSchools();
+    }
+  }, [activeTab, fetchCoordinators, fetchSchools]);
 
   const handleCsvDataReady = (data: StudentRow[]) => {
     setPendingStudents(data);
@@ -1103,10 +1247,14 @@ export default function AdminPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 max-w-xs">
+          <TabsList className="grid w-full grid-cols-3 max-w-md">
             <TabsTrigger value="escolas" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Escolas
+            </TabsTrigger>
+            <TabsTrigger value="coordenadores" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Coordenadores
             </TabsTrigger>
             <TabsTrigger value="configuracoes" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
@@ -1232,6 +1380,107 @@ export default function AdminPage() {
                         </div>
                       </Collapsible>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="coordenadores" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <CardTitle>Gestao de Coordenadores</CardTitle>
+                    <CardDescription>
+                      {coordinators.length} coordenador(es) cadastrado(s)
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={fetchCoordinators}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Atualizar
+                    </Button>
+                    <Button size="sm" onClick={() => {
+                      setCoordinatorToEdit(null);
+                      setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
+                      setShowCoordinatorModal(true);
+                    }}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Novo Coordenador
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoadingCoordinators ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                ) : coordinators.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhum coordenador cadastrado</p>
+                    <p className="text-sm mt-2">Clique em "Novo Coordenador" para adicionar</p>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Escola</TableHead>
+                          <TableHead>Acesso</TableHead>
+                          <TableHead className="text-right">Acoes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {coordinators.map((coord) => (
+                          <TableRow key={coord.id}>
+                            <TableCell className="font-medium">{coord.name}</TableCell>
+                            <TableCell className="text-sm">{coord.email}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{coord.schools?.name || 'Sem escola'}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              {coord.allowed_series && coord.allowed_series.length > 0 ? (
+                                <div className="flex gap-1">
+                                  {coord.allowed_series.map(s => (
+                                    <Badge key={s} variant="secondary" className="text-xs">{s}a</Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <Badge className="bg-green-100 text-green-800">Total</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => {
+                                  setCoordinatorToEdit(coord);
+                                  setCoordinatorForm({
+                                    email: coord.email,
+                                    name: coord.name,
+                                    password: '',
+                                    school_id: coord.school_id || '',
+                                    allowed_series: coord.allowed_series || []
+                                  });
+                                  setShowCoordinatorModal(true);
+                                }} title="Editar">
+                                  <Edit2 className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setShowResetPasswordModal(coord)} title="Resetar senha">
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setCoordinatorToDelete(coord)} className="text-red-600 hover:text-red-700 hover:bg-red-50" title="Excluir">
+                                  <TrashIcon size={16} dangerHover />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>
@@ -1758,6 +2007,129 @@ export default function AdminPage() {
             >
               {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Criar Aluno
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Coordenador (Criar/Editar) */}
+      <Dialog open={showCoordinatorModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowCoordinatorModal(false);
+          setCoordinatorToEdit(null);
+          setCoordinatorForm({ email: '', name: '', password: '', school_id: '', allowed_series: [] });
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              {coordinatorToEdit ? 'Editar Coordenador' : 'Novo Coordenador'}
+            </DialogTitle>
+            <DialogDescription>
+              {coordinatorToEdit ? 'Atualize os dados do coordenador' : 'Preencha os dados do novo coordenador'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {!coordinatorToEdit && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Email *</label>
+                <Input type="email" value={coordinatorForm.email} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, email: e.target.value })} placeholder="coordenador@escola.com" />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nome *</label>
+              <Input value={coordinatorForm.name} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, name: e.target.value })} placeholder="Nome do Coordenador" />
+            </div>
+            {!coordinatorToEdit && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Senha *</label>
+                <Input type="password" value={coordinatorForm.password} onChange={(e) => setCoordinatorForm({ ...coordinatorForm, password: e.target.value })} placeholder="Minimo 8 caracteres" />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Escola *</label>
+              <Select value={coordinatorForm.school_id} onValueChange={(value) => setCoordinatorForm({ ...coordinatorForm, school_id: value })}>
+                <SelectTrigger><SelectValue placeholder="Selecione uma escola" /></SelectTrigger>
+                <SelectContent>
+                  {schools.map((school) => (
+                    <SelectItem key={school.id} value={school.id}>{school.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Acesso por Serie</label>
+              <p className="text-xs text-gray-500 mb-2">Deixe vazio para acesso total. Selecione as series que este coordenador pode visualizar.</p>
+              <div className="flex gap-2">
+                {['1', '2', '3'].map((serie) => (
+                  <Button key={serie} type="button" variant={coordinatorForm.allowed_series.includes(serie) ? 'default' : 'outline'} size="sm" onClick={() => {
+                    setCoordinatorForm(prev => ({
+                      ...prev,
+                      allowed_series: prev.allowed_series.includes(serie) ? prev.allowed_series.filter(s => s !== serie) : [...prev.allowed_series, serie]
+                    }));
+                  }}>
+                    {serie}a Serie
+                  </Button>
+                ))}
+              </div>
+              {coordinatorForm.allowed_series.length === 0 && (
+                <Badge className="bg-green-100 text-green-800 mt-2">Acesso Total</Badge>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setShowCoordinatorModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveCoordinator} disabled={isActionLoading || !coordinatorForm.name || (!coordinatorToEdit && (!coordinatorForm.email || !coordinatorForm.password)) || !coordinatorForm.school_id}>
+              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {coordinatorToEdit ? 'Salvar' : 'Criar Coordenador'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog Confirmar Exclusao de Coordenador */}
+      <AlertDialog open={!!coordinatorToDelete} onOpenChange={(open) => !open && setCoordinatorToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Coordenador</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o coordenador <strong>{coordinatorToDelete?.name}</strong>?
+              <br />
+              <span className="text-red-600 font-medium">Esta acao nao pode ser desfeita. O acesso sera removido imediatamente.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteCoordinator} className="bg-red-600 hover:bg-red-700" disabled={isActionLoading}>
+              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog Resetar Senha do Coordenador */}
+      <Dialog open={!!showResetPasswordModal} onOpenChange={(open) => { if (!open) { setShowResetPasswordModal(null); setNewCoordinatorPassword(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              Resetar Senha
+            </DialogTitle>
+            <DialogDescription>Definir nova senha para {showResetPasswordModal?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nova Senha *</label>
+              <Input type="password" value={newCoordinatorPassword} onChange={(e) => setNewCoordinatorPassword(e.target.value)} placeholder="Minimo 8 caracteres" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setShowResetPasswordModal(null)}>Cancelar</Button>
+            <Button onClick={handleResetCoordinatorPassword} disabled={isActionLoading || newCoordinatorPassword.length < 8}>
+              {isActionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Alterar Senha
             </Button>
           </div>
         </DialogContent>

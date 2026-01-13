@@ -379,11 +379,43 @@ export default function EscolaPage() {
     }
   }, [selectedAlunoMatricula, fetchAlunoHistorico]);
 
-  // Extract serie from turma name
+  // Extract série number from turma name (e.g., "EM3VA" → "3", "3ª Série A" → "3")
+  const extractSerieNumber = (turma: string | null): string | null => {
+    if (!turma) return null;
+    // Pattern 1: EM followed by number (e.g., EM3VA, EM1VB)
+    const emPattern = turma.match(/^EM(\d)/i);
+    if (emPattern) return emPattern[1];
+    // Pattern 2: Number followed by ª/º Série/Ano
+    const seriePattern = turma.match(/^(\d+)[ªº]?\s*[Ss]érie/i);
+    if (seriePattern) return seriePattern[1];
+    const anoPattern = turma.match(/^(\d+)[ªº]?\s*[Aa]no/i);
+    if (anoPattern) return anoPattern[1];
+    // Pattern 3: Just starts with a number
+    const numPattern = turma.match(/^(\d)/);
+    if (numPattern) return numPattern[1];
+    return null;
+  };
+
+  // Extract série for display (e.g., "EM3VA" → "3ª Série")
   const extractSerie = (turma: string | null): string => {
     if (!turma) return '';
-    const match = turma.match(/^(\d+ª?\s*[Ss]érie|\d+º?\s*[Aa]no)/i);
-    return match ? match[1] : turma;
+    const serieNum = extractSerieNumber(turma);
+    if (serieNum) return `${serieNum}ª Série`;
+    return turma;
+  };
+
+  // Helper: Check if turma matches allowed series
+  const isTurmaAllowed = (turma: string | null): boolean => {
+    const allowedSeries = profile?.allowed_series;
+    if (!allowedSeries || allowedSeries.length === 0) return true;
+
+    const serieNumber = extractSerieNumber(turma);
+    if (!serieNumber) return false;
+
+    return allowedSeries.some(allowed => {
+      const allowedNumber = allowed.match(/(\d)/)?.[1];
+      return allowedNumber === serieNumber;
+    });
   };
 
   // Filter results
@@ -412,13 +444,18 @@ export default function EscolaPage() {
     return turma !== null && turma !== 'null' && turma.trim() !== '' && turma !== 'Sem turma';
   };
 
-  // Get unique series from results (excluding null/invalid)
-  const availableSeries = [...new Set(results.map(r => extractSerie(r.turma)).filter(s => s && s !== 'Sem série' && s !== 'null'))].sort();
+  // Get unique series from results (excluding null/invalid), filtered by allowed series
+  const availableSeries = [...new Set(
+    results
+      .map(r => extractSerie(r.turma))
+      .filter(s => s && s !== 'Sem série' && s !== 'null')
+      .filter(s => isTurmaAllowed(s))
+  )].sort();
 
-  // Get turmas for selected serie (excluding null/invalid)
+  // Get turmas for selected serie (excluding null/invalid), filtered by allowed series
   const availableTurmas = selectedSerie === 'all'
-    ? [...new Set(results.map(r => r.turma).filter(isValidTurma))].sort()
-    : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma))].sort();
+    ? [...new Set(results.map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort()
+    : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort();
 
   if (loadingDashboard && !dashboardData) {
     return (
@@ -439,6 +476,11 @@ export default function EscolaPage() {
               <h1 className="text-xl font-bold">Portal da Escola</h1>
               <p className="text-sm text-gray-500">
                 {profile?.name} - Coordenador(a)
+                {profile?.allowed_series && profile.allowed_series.length > 0 && (
+                  <span className="ml-2 text-blue-600">
+                    ({profile.allowed_series.join(', ')})
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -848,7 +890,9 @@ export default function EscolaPage() {
           {/* TAB: Turmas */}
           <TabsContent value="turmas">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {dashboardData?.turmaRanking.map((turma, index) => (
+              {dashboardData?.turmaRanking
+                .filter(turma => isTurmaAllowed(turma.turma))
+                .map((turma, index) => (
                 <Card key={turma.turma || `turma-${index}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
@@ -893,11 +937,12 @@ export default function EscolaPage() {
                       <Button
                         variant="outline"
                         size="icon"
-                        title="Exportar Excel"
-                        className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                        onClick={() => downloadTurmaExcel(turma.turma || '')}
+                        onClick={() => {
+                          window.open(`/api/escola/turmas/${encodeURIComponent(turma.turma)}/export-excel`, '_blank');
+                        }}
+                        title="Exportar para Excel"
                       >
-                        <FileSpreadsheet className="h-4 w-4" />
+                        <FileSpreadsheet className="h-4 w-4 text-green-600" />
                       </Button>
                     </div>
                   </CardContent>
