@@ -6596,6 +6596,15 @@ Para cada disciplina:
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+
+      // Verify coordinator has access to this turma
+      if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
+        return res.status(403).json({
+          error: "Acesso negado a esta turma",
+          code: "SERIES_ACCESS_DENIED"
+        });
+      }
 
       console.log(`[ESCOLA EXPORT EXCEL] Exportando turma: ${decodedTurma}`);
 
