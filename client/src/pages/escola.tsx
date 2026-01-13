@@ -355,11 +355,29 @@ export default function EscolaPage() {
     }
   }, [selectedAlunoMatricula, fetchAlunoHistorico]);
 
-  // Extract serie from turma name
+  // Extract série number from turma name (e.g., "EM3VA" → "3", "3ª Série A" → "3")
+  const extractSerieNumber = (turma: string | null): string | null => {
+    if (!turma) return null;
+    // Pattern 1: EM followed by number (e.g., EM3VA, EM1VB)
+    const emPattern = turma.match(/^EM(\d)/i);
+    if (emPattern) return emPattern[1];
+    // Pattern 2: Number followed by ª/º Série/Ano
+    const seriePattern = turma.match(/^(\d+)[ªº]?\s*[Ss]érie/i);
+    if (seriePattern) return seriePattern[1];
+    const anoPattern = turma.match(/^(\d+)[ªº]?\s*[Aa]no/i);
+    if (anoPattern) return anoPattern[1];
+    // Pattern 3: Just starts with a number
+    const numPattern = turma.match(/^(\d)/);
+    if (numPattern) return numPattern[1];
+    return null;
+  };
+
+  // Extract série for display (e.g., "EM3VA" → "3ª Série")
   const extractSerie = (turma: string | null): string => {
     if (!turma) return '';
-    const match = turma.match(/^(\d+ª?\s*[Ss]érie|\d+º?\s*[Aa]no)/i);
-    return match ? match[1] : turma;
+    const serieNum = extractSerieNumber(turma);
+    if (serieNum) return `${serieNum}ª Série`;
+    return turma;
   };
 
   // Helper: Check if turma matches allowed series
@@ -367,13 +385,13 @@ export default function EscolaPage() {
     const allowedSeries = profile?.allowed_series;
     if (!allowedSeries || allowedSeries.length === 0) return true;
 
-    const serie = extractSerie(turma);
-    if (!serie) return false;
+    const serieNumber = extractSerieNumber(turma);
+    if (!serieNumber) return false;
 
-    return allowedSeries.some(allowed =>
-      serie.toLowerCase().includes(allowed.toLowerCase().replace(/[ªº]/g, '').trim()) ||
-      allowed.toLowerCase().includes(serie.toLowerCase().replace(/[ªº]/g, '').trim())
-    );
+    return allowedSeries.some(allowed => {
+      const allowedNumber = allowed.match(/(\d)/)?.[1];
+      return allowedNumber === serieNumber;
+    });
   };
 
   // Filter results
