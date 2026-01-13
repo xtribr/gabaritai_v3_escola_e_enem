@@ -16,7 +16,7 @@ import {
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Eye, Download,
   BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet,
-  LayoutDashboard, ClipboardList, GraduationCap
+  LayoutDashboard, ClipboardList, GraduationCap, LogOut
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -488,7 +488,7 @@ function TopAlunosCard({ alunos, type }: TopAlunosCardProps) {
 // ============================================================================
 
 export default function EscolaPage() {
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const { toast } = useToast();
 
   // Tab state
@@ -809,6 +809,15 @@ export default function EscolaPage() {
               <GraduationCap className="w-3 h-3 mr-1" />
               {dashboardData?.stats.totalTurmas || 0} turmas
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-gray-500 hover:text-red-500 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
           </div>
         </div>
         {/* Gradient bar */}

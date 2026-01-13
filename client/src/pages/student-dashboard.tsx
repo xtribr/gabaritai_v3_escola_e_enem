@@ -31,7 +31,7 @@ import {
   TrendingUp, TrendingDown, Minus, Target, CheckCircle2, XCircle, MinusCircle,
   History, Eye, Calendar, BarChart3, AlertTriangle, Users, GraduationCap,
   ArrowRight, Lightbulb, Download, Lock, Unlock, Trophy, Activity, FileBarChart,
-  Bell
+  Bell, LogOut
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
@@ -456,7 +456,7 @@ function LoadingCard() {
 // ============================================================================
 
 export default function StudentDashboard() {
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
 
   // Data State
   const [results, setResults] = useState<StudentResult[]>([]);
@@ -657,6 +657,17 @@ export default function StudentDashboard() {
               <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F26A4B] rounded-full" />
             </button>
+
+            {/* Logout Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-gray-500 hover:text-red-500 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
           </div>
         </div>
       </header>
