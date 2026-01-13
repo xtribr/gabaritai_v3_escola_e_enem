@@ -324,7 +324,7 @@ export default function AdminPage() {
       const method = schoolToEdit ? 'PUT' : 'POST';
       const url = schoolToEdit ? `/api/schools/${schoolToEdit.id}` : '/api/schools';
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(schoolForm),
@@ -354,7 +354,7 @@ export default function AdminPage() {
       const method = simuladoToEdit ? 'PUT' : 'POST';
       const url = simuladoToEdit ? `/api/simulados/${simuladoToEdit.id}` : '/api/simulados';
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -611,17 +611,17 @@ export default function AdminPage() {
 
       const body = coordinatorToEdit
         ? {
-            name: coordinatorForm.name,
-            school_id: coordinatorForm.school_id || null,
-            allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
-          }
+          name: coordinatorForm.name,
+          school_id: coordinatorForm.school_id || null,
+          allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
+        }
         : {
-            email: coordinatorForm.email,
-            name: coordinatorForm.name,
-            password: coordinatorForm.password,
-            school_id: coordinatorForm.school_id,
-            allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
-          };
+          email: coordinatorForm.email,
+          name: coordinatorForm.name,
+          password: coordinatorForm.password,
+          school_id: coordinatorForm.school_id,
+          allowed_series: coordinatorForm.allowed_series.length > 0 ? coordinatorForm.allowed_series : null
+        };
 
       const response = await authFetch(url, {
         method,
