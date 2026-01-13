@@ -12,6 +12,7 @@ export interface AuthenticatedRequest extends Request {
     role: string;
     school_id: string | null;
     name: string;
+    allowed_series: string[] | null;
   };
 }
 
@@ -86,7 +87,7 @@ export function requireRole(...allowedRoles: string[]) {
 
       const { data: profile, error } = await supabaseAdmin
         .from('profiles')
-        .select('id, role, school_id, name')
+        .select('id, role, school_id, name, allowed_series')
         .eq('id', userId)
         .single();
 
