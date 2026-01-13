@@ -6203,8 +6203,8 @@ Para cada disciplina:
   // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
   app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
-      // Por enquanto, retorna todos os resultados (após implementar auth, filtrar por school_id)
-      // Em produção: extrair school_id do token JWT e filtrar
+      const allowedSeries = (req as any).profile?.allowed_series || null;
+      console.log(`[ESCOLA RESULTS] User: ${(req as any).profile?.name}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
       // Buscar student_answers com info do exame
       const { data: answers, error: answersError } = await supabaseAdmin
@@ -6233,8 +6233,13 @@ Para cada disciplina:
         return res.status(500).json({ error: answersError.message });
       }
 
+      // Filter by allowed_series if coordinator has restrictions
+      const filteredAnswers = (answers || []).filter((a: any) =>
+        isTurmaAllowed(a.turma, allowedSeries)
+      );
+
       // Formatar resultados
-      const results = (answers || []).map((a: any) => ({
+      const results = filteredAnswers.map((a: any) => ({
         id: a.id,
         student_name: a.student_name,
         student_number: a.student_number,
