@@ -434,6 +434,11 @@ export default function EscolaPage() {
               <h1 className="text-xl font-bold">Portal da Escola</h1>
               <p className="text-sm text-gray-500">
                 {profile?.name} - Coordenador(a)
+                {profile?.allowed_series && profile.allowed_series.length > 0 && (
+                  <span className="ml-2 text-blue-600">
+                    ({profile.allowed_series.join(', ')})
+                  </span>
+                )}
               </p>
             </div>
           </div>
