@@ -1,0 +1,78 @@
+{
+  "projectName": "XTRI Gabarito v2",
+  "description": "Sistema de correção automática de gabaritos com OMR e TRI",
+  "branchName": "ralph/gabarito-v2",
+  "createdAt": "2026-01-11",
+  "userStories": [
+    {
+      "id": "story-1",
+      "title": "Endpoint de Upload de CSV",
+      "priority": 1,
+      "passes": false,
+      "acceptanceCriteria": [
+        "POST /api/upload-csv aceita arquivo CSV com colunas: nome, matricula, turma",
+        "Cria batch no Supabase com school_id e exam_id",
+        "Gera sheet_code único (XTRI-XXXXXX) para cada aluno",
+        "Retorna batch_id e lista de alunos criados",
+        "Testes unitários passando"
+      ],
+      "technicalNotes": "Usar pandas para parsing, secrets.choice para códigos únicos"
+    },
+    {
+      "id": "story-2", 
+      "title": "Geração de PDF com QR Code",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "GET /api/download-pdf/{batch_id} retorna PDF",
+        "Cada página tem: QR code, nome do aluno, grid 90 questões",
+        "Marcadores de alinhamento nos 4 cantos",
+        "PDF válido e imprimível em A4",
+        "Testes de geração passando"
+      ],
+      "technicalNotes": "Usar reportlab para PDF, qrcode para QR"
+    },
+    {
+      "id": "story-3",
+      "title": "Leitura de QR Code Robusta",
+      "priority": 3,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Detecta QR em 95%+ das imagens de teste",
+        "Fallback: ROI → full image → binary → scaled",
+        "Valida formato XTRI-XXXXXX",
+        "Tempo < 50ms por imagem",
+        "Testes com 10+ imagens reais"
+      ],
+      "technicalNotes": "Usar pyzbar, múltiplos métodos de pré-processamento"
+    },
+    {
+      "id": "story-4",
+      "title": "OMR com Detecção Hough",
+      "priority": 4,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Detecta 90/90 questões corretamente",
+        "Usa HoughCircles para encontrar bolhas",
+        "Threshold calibrado: 40% escuridão",
+        "Tempo < 100ms por gabarito",
+        "100% precisão em gabaritos do template XTRI"
+      ],
+      "technicalNotes": "cv2.HoughCircles, organizar por linhas/colunas"
+    },
+    {
+      "id": "story-5",
+      "title": "Integração Supabase Completa",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Lookup de aluno por sheet_code funciona",
+        "Salva respostas em answer_sheet_students",
+        "Campos: answers (JSON), answered_count, blank_count, processed_at",
+        "RLS valida school_id",
+        "Testes de integração passando"
+      ],
+      "technicalNotes": "Tabelas: answer_sheet_batches, answer_sheet_students"
+    }
+  ]
+}
