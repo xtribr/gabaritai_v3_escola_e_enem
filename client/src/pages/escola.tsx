@@ -20,8 +20,7 @@ import {
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis,
-  PolarRadiusAxis, Radar, Legend
+  ResponsiveContainer, Cell, Legend
 } from 'recharts';
 
 // ============================================================================
@@ -940,47 +939,6 @@ export default function EscolaPage() {
                         <Cell fill="#6366f1" />
                       </Bar>
                     </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Radar Chart */}
-              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
-                <div className="p-6">
-                  <div className="flex items-center gap-2 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
-                      <BarChart2 className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">Perfil de Desempenho</h3>
-                      <p className="text-xs text-gray-500">Visualização comparativa das áreas</p>
-                    </div>
-                  </div>
-
-                  <ResponsiveContainer width="100%" height={280}>
-                    <RadarChart
-                      data={[
-                        { area: 'LC', value: dashboardData?.desempenhoPorArea.lc || 0, fullMark: 1000 },
-                        { area: 'CH', value: dashboardData?.desempenhoPorArea.ch || 0, fullMark: 1000 },
-                        { area: 'CN', value: dashboardData?.desempenhoPorArea.cn || 0, fullMark: 1000 },
-                        { area: 'MT', value: dashboardData?.desempenhoPorArea.mt || 0, fullMark: 1000 },
-                      ]}
-                    >
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="area" tick={{ fontSize: 12 }} />
-                      <PolarRadiusAxis angle={90} domain={[0, 1000]} tick={{ fontSize: 10 }} />
-                      <Radar
-                        name="TRI"
-                        dataKey="value"
-                        stroke={XTRI_COLORS.cyan}
-                        fill={XTRI_COLORS.cyan}
-                        fillOpacity={0.4}
-                      />
-                      <RechartsTooltip
-                        formatter={(value: number) => [`${value.toFixed(0)}`, 'TRI Médio']}
-                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
-                      />
-                    </RadarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
