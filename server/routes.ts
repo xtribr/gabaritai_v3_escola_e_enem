@@ -8419,22 +8419,31 @@ Para cada disciplina:
       const schoolId = profile.school_id;
 
       // Buscar todas as listas disponíveis (com filtro opcional de área)
-      let listasQuery = supabaseAdmin
-        .from("exercise_lists")
-        .select("id, titulo, area, tri_min, tri_max, ordem");
+      let listas: any[] = [];
+      try {
+        let listasQuery = supabaseAdmin
+          .from("exercise_lists")
+          .select("id, titulo, area, tri_min, tri_max, ordem");
 
-      if (area) {
-        listasQuery = listasQuery.eq("area", area);
-      }
+        if (area) {
+          listasQuery = listasQuery.eq("area", area);
+        }
 
-      if (listId) {
-        listasQuery = listasQuery.eq("id", listId);
-      }
+        if (listId) {
+          listasQuery = listasQuery.eq("id", listId);
+        }
 
-      const { data: listas, error: listasError } = await listasQuery.order("area").order("tri_min").order("ordem");
+        const { data: listasData, error: listasError } = await listasQuery.order("area").order("tri_min").order("ordem");
 
-      if (listasError) {
-        return res.status(500).json({ error: "Erro ao buscar listas" });
+        if (listasError) {
+          console.warn("[COORDINATOR_DOWNLOADS] Tabela exercise_lists não encontrada ou erro:", listasError.message);
+          listas = [];
+        } else {
+          listas = listasData || [];
+        }
+      } catch (err: any) {
+        console.warn("[COORDINATOR_DOWNLOADS] Erro ao buscar listas:", err.message);
+        listas = [];
       }
 
       // Buscar todos os alunos da escola (com filtro opcional de turma)
@@ -8455,19 +8464,29 @@ Para cada disciplina:
       }
 
       // Buscar todos os downloads da escola
-      let downloadsQuery = supabaseAdmin
-        .from("list_downloads")
-        .select("student_id, list_id, downloaded_at")
-        .eq("school_id", schoolId);
+      let downloads: any[] = [];
+      try {
+        let downloadsQuery = supabaseAdmin
+          .from("list_downloads")
+          .select("student_id, list_id, downloaded_at")
+          .eq("school_id", schoolId);
 
-      if (turma) {
-        downloadsQuery = downloadsQuery.eq("turma", turma);
-      }
+        if (turma) {
+          downloadsQuery = downloadsQuery.eq("turma", turma);
+        }
 
-      const { data: downloads, error: downloadsError } = await downloadsQuery;
+        const { data: downloadsData, error: downloadsError } = await downloadsQuery;
 
-      if (downloadsError) {
-        return res.status(500).json({ error: "Erro ao buscar downloads" });
+        if (downloadsError) {
+          // Se a tabela não existe, retornar lista vazia (feature não habilitada)
+          console.warn("[COORDINATOR_DOWNLOADS] Tabela list_downloads não encontrada ou erro:", downloadsError.message);
+          downloads = [];
+        } else {
+          downloads = downloadsData || [];
+        }
+      } catch (err: any) {
+        console.warn("[COORDINATOR_DOWNLOADS] Erro ao buscar downloads:", err.message);
+        downloads = [];
       }
 
       // Criar mapa de downloads para busca rápida
