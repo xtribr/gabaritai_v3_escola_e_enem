@@ -6206,6 +6206,58 @@ Para cada disciplina:
     }
   });
 
+  // POST /api/internal/promote-to-super-admin - Promover usuário a super_admin
+  // ⚠️ TEMPORÁRIO - Protegido por email específico
+  app.post("/api/internal/promote-to-super-admin", async (req: Request, res: Response) => {
+    try {
+      const { email } = req.body;
+
+      // Apenas emails autorizados
+      const allowedEmails = ['xtrienem@gmail.com', 'xandao@gmail.com'];
+      if (!email || !allowedEmails.includes(email.toLowerCase())) {
+        return res.status(403).json({ error: "Email não autorizado" });
+      }
+
+      // Buscar profile pelo email
+      const { data: profile, error: fetchError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, role")
+        .eq("email", email.toLowerCase())
+        .single();
+
+      if (fetchError || !profile) {
+        return res.status(404).json({ error: "Profile não encontrado" });
+      }
+
+      // Atualizar role para super_admin
+      const { error: updateError } = await supabaseAdmin
+        .from("profiles")
+        .update({ role: "super_admin" })
+        .eq("id", profile.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Atualizar metadata no Auth também
+      await supabaseAdmin.auth.admin.updateUserById(profile.id, {
+        user_metadata: { role: "super_admin" }
+      });
+
+      console.log(`[PROMOTE] ✅ ${email} promovido a super_admin`);
+
+      res.json({
+        success: true,
+        message: `${email} agora é super_admin`,
+        profile: { ...profile, role: "super_admin" }
+      });
+
+    } catch (error: any) {
+      console.error("[PROMOTE] Erro:", error);
+      res.status(500).json({ error: "Erro ao promover usuário", details: error.message });
+    }
+  });
+
   // PUT /api/profile/update - Atualizar perfil do usuário
   app.put("/api/profile/update", async (req: Request, res: Response) => {
     try {
