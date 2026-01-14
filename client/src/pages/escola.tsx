@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -782,43 +782,77 @@ export default function EscolaPage() {
 
       {/* Header Sticky */}
       <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                <School className="w-5 h-5 text-white" />
+        <div className="max-w-7xl mx-auto px-4 lg:px-8 py-3">
+          {/* Top row: Logo, Profile, Actions */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                  <School className="w-5 h-5 text-white" />
+                </div>
+                <span className="font-bold text-lg text-gray-900 dark:text-white hidden sm:block">Portal da Escola</span>
               </div>
-              <span className="font-bold text-lg text-gray-900 dark:text-white hidden sm:block">Portal da Escola</span>
+              <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+              <div className="hidden sm:block">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{profile?.name}</p>
+                <p className="text-xs text-gray-500">
+                  Coordenador(a)
+                  {profile?.allowed_series && profile.allowed_series.length > 0 && (
+                    <span className="ml-1 text-[#33B5E5]">
+                      ({profile.allowed_series.join(', ')})
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
-            <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 hidden sm:block" />
-            <div className="hidden sm:block">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{profile?.name}</p>
-              <p className="text-xs text-gray-500">
-                Coordenador(a)
-                {profile?.allowed_series && profile.allowed_series.length > 0 && (
-                  <span className="ml-1 text-[#33B5E5]">
-                    ({profile.allowed_series.join(', ')})
-                  </span>
-                )}
-              </p>
+
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="border-[#33B5E5] text-[#33B5E5] hidden md:flex">
+                <GraduationCap className="w-3 h-3 mr-1" />
+                {dashboardData?.stats.totalTurmas || 0} turmas
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={signOut}
+                className="text-gray-500 hover:text-red-500 hover:bg-red-50"
+              >
+                <LogOut className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Sair</span>
+              </Button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="border-[#33B5E5] text-[#33B5E5] hidden md:flex">
-              <GraduationCap className="w-3 h-3 mr-1" />
-              {dashboardData?.stats.totalTurmas || 0} turmas
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={signOut}
-              className="text-gray-500 hover:text-red-500 hover:bg-red-50"
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">Sair</span>
-            </Button>
-          </div>
+          {/* Navigation Tabs */}
+          <nav className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
+            {[
+              { value: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
+              { value: 'resultados', label: 'Resultados', icon: ClipboardList },
+              { value: 'turmas', label: 'Turmas', icon: GraduationCap },
+              { value: 'alunos', label: 'Alunos', icon: Users },
+              { value: 'listas', label: 'Listas', icon: BookOpen },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setActiveTab(tab.value)}
+                  className={`
+                    flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                    whitespace-nowrap transition-all duration-200
+                    ${isActive
+                      ? 'bg-[#33B5E5] text-white shadow-md shadow-cyan-500/30'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                    }
+                  `}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
         {/* Gradient bar */}
         <div className="h-1 bg-gradient-to-r from-[#33B5E5] via-[#F26A4B] to-[#33B5E5]" />
@@ -862,46 +896,8 @@ export default function EscolaPage() {
           />
         </section>
 
-        {/* Tabs */}
+        {/* Tab Content - Navigation is in header */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="bg-gray-100 dark:bg-gray-800 p-1.5 rounded-xl inline-flex">
-            <TabsTrigger
-              value="visao-geral"
-              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
-            >
-              <LayoutDashboard className="w-4 h-4 mr-2" />
-              Visão Geral
-            </TabsTrigger>
-            <TabsTrigger
-              value="resultados"
-              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
-            >
-              <ClipboardList className="w-4 h-4 mr-2" />
-              Resultados
-            </TabsTrigger>
-            <TabsTrigger
-              value="turmas"
-              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
-            >
-              <GraduationCap className="w-4 h-4 mr-2" />
-              Turmas
-            </TabsTrigger>
-            <TabsTrigger
-              value="alunos"
-              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
-            >
-              <Users className="w-4 h-4 mr-2" />
-              Alunos
-            </TabsTrigger>
-            <TabsTrigger
-              value="listas"
-              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
-            >
-              <BookOpen className="w-4 h-4 mr-2" />
-              Listas
-            </TabsTrigger>
-          </TabsList>
-
           {/* TAB: Visão Geral */}
           <TabsContent value="visao-geral" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
