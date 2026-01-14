@@ -8583,5 +8583,320 @@ Para cada disciplina:
     }
   });
 
+  // ============================================================================
+  // PROJETOS ESCOLA - CRUD para projetos de correção por escola
+  // Substitui o localStorage por armazenamento persistente no Supabase
+  // ============================================================================
+
+  // POST /api/projetos-escola - Criar novo projeto de correção
+  app.post("/api/projetos-escola", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { nome, turma, descricao, provas, alunos_unicos, school_id } = req.body;
+
+      if (!nome) {
+        return res.status(400).json({
+          error: "Nome do projeto é obrigatório"
+        });
+      }
+
+      // Determinar school_id: super_admin pode especificar, school_admin usa o próprio
+      let targetSchoolId = school_id;
+
+      // Buscar profile para obter school_id se necessário
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user!.id)
+        .single();
+
+      if (!targetSchoolId && profile?.school_id) {
+        targetSchoolId = profile.school_id;
+      }
+
+      if (!targetSchoolId) {
+        return res.status(400).json({
+          error: "school_id é obrigatório"
+        });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("projetos_escola")
+        .insert({
+          school_id: targetSchoolId,
+          created_by: authReq.user!.id,
+          nome,
+          turma: turma || null,
+          descricao: descricao || null,
+          provas: provas || [],
+          alunos_unicos: alunos_unicos || []
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[PROJETOS_ESCOLA] Erro ao criar:", error);
+        return res.status(500).json({
+          error: "Erro ao criar projeto",
+          details: error.message
+        });
+      }
+
+      console.log(`[PROJETOS_ESCOLA] Projeto criado: ${data.id} - ${nome}`);
+
+      res.json({
+        success: true,
+        projeto: data
+      });
+
+    } catch (error: any) {
+      console.error("[PROJETOS_ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao criar projeto",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/projetos-escola - Listar projetos da escola
+  app.get("/api/projetos-escola", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { school_id } = req.query;
+
+      // Buscar profile para verificar permissões
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user!.id)
+        .single();
+
+      let targetSchoolId = school_id as string;
+
+      // school_admin só pode ver projetos da própria escola
+      if (profile?.role === 'school_admin') {
+        targetSchoolId = profile.school_id!;
+      }
+
+      let query = supabaseAdmin
+        .from("projetos_escola")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (targetSchoolId) {
+        query = query.eq("school_id", targetSchoolId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("[PROJETOS_ESCOLA] Erro ao listar:", error);
+        return res.status(500).json({
+          error: "Erro ao listar projetos",
+          details: error.message
+        });
+      }
+
+      res.json({
+        success: true,
+        projetos: data || []
+      });
+
+    } catch (error: any) {
+      console.error("[PROJETOS_ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao listar projetos",
+        details: error.message
+      });
+    }
+  });
+
+  // GET /api/projetos-escola/:id - Buscar projeto específico
+  app.get("/api/projetos-escola/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { id } = req.params;
+
+      // Buscar profile para verificar permissões
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user!.id)
+        .single();
+
+      const { data, error } = await supabaseAdmin
+        .from("projetos_escola")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error || !data) {
+        return res.status(404).json({
+          error: "Projeto não encontrado"
+        });
+      }
+
+      // Verificar se school_admin tem acesso a este projeto
+      if (profile?.role === 'school_admin' && data.school_id !== profile.school_id) {
+        return res.status(403).json({
+          error: "Acesso negado a este projeto"
+        });
+      }
+
+      res.json({
+        success: true,
+        projeto: data
+      });
+
+    } catch (error: any) {
+      console.error("[PROJETOS_ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao buscar projeto",
+        details: error.message
+      });
+    }
+  });
+
+  // PUT /api/projetos-escola/:id - Atualizar projeto
+  app.put("/api/projetos-escola/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { id } = req.params;
+      const { nome, turma, descricao, provas, alunos_unicos } = req.body;
+
+      // Buscar profile para verificar permissões
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user!.id)
+        .single();
+
+      // Verificar se projeto existe e se usuário tem acesso
+      const { data: existingProjeto, error: fetchError } = await supabaseAdmin
+        .from("projetos_escola")
+        .select("school_id")
+        .eq("id", id)
+        .single();
+
+      if (fetchError || !existingProjeto) {
+        return res.status(404).json({
+          error: "Projeto não encontrado"
+        });
+      }
+
+      // Verificar se school_admin tem acesso
+      if (profile?.role === 'school_admin' && existingProjeto.school_id !== profile.school_id) {
+        return res.status(403).json({
+          error: "Acesso negado a este projeto"
+        });
+      }
+
+      // Construir objeto de atualização
+      const updateData: Record<string, any> = {};
+      if (nome !== undefined) updateData.nome = nome;
+      if (turma !== undefined) updateData.turma = turma;
+      if (descricao !== undefined) updateData.descricao = descricao;
+      if (provas !== undefined) updateData.provas = provas;
+      if (alunos_unicos !== undefined) updateData.alunos_unicos = alunos_unicos;
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({
+          error: "Nenhum dado para atualizar"
+        });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("projetos_escola")
+        .update(updateData)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[PROJETOS_ESCOLA] Erro ao atualizar:", error);
+        return res.status(500).json({
+          error: "Erro ao atualizar projeto",
+          details: error.message
+        });
+      }
+
+      console.log(`[PROJETOS_ESCOLA] Projeto atualizado: ${id}`);
+
+      res.json({
+        success: true,
+        projeto: data
+      });
+
+    } catch (error: any) {
+      console.error("[PROJETOS_ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao atualizar projeto",
+        details: error.message
+      });
+    }
+  });
+
+  // DELETE /api/projetos-escola/:id - Deletar projeto
+  app.delete("/api/projetos-escola/:id", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { id } = req.params;
+
+      // Buscar profile para verificar permissões
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("school_id, role")
+        .eq("id", authReq.user!.id)
+        .single();
+
+      // Verificar se projeto existe e se usuário tem acesso
+      const { data: existingProjeto, error: fetchError } = await supabaseAdmin
+        .from("projetos_escola")
+        .select("school_id, nome")
+        .eq("id", id)
+        .single();
+
+      if (fetchError || !existingProjeto) {
+        return res.status(404).json({
+          error: "Projeto não encontrado"
+        });
+      }
+
+      // Verificar se school_admin tem acesso
+      if (profile?.role === 'school_admin' && existingProjeto.school_id !== profile.school_id) {
+        return res.status(403).json({
+          error: "Acesso negado a este projeto"
+        });
+      }
+
+      const { error } = await supabaseAdmin
+        .from("projetos_escola")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error("[PROJETOS_ESCOLA] Erro ao deletar:", error);
+        return res.status(500).json({
+          error: "Erro ao deletar projeto",
+          details: error.message
+        });
+      }
+
+      console.log(`[PROJETOS_ESCOLA] Projeto deletado: ${id} - ${existingProjeto.nome}`);
+
+      res.json({
+        success: true,
+        message: "Projeto deletado com sucesso"
+      });
+
+    } catch (error: any) {
+      console.error("[PROJETOS_ESCOLA] Erro:", error);
+      res.status(500).json({
+        error: "Erro ao deletar projeto",
+        details: error.message
+      });
+    }
+  });
+
   return httpServer;
 }

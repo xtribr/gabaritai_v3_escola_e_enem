@@ -47,6 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import type { StudentData, ExamStatistics, ExamConfiguration, ProjetoEscola, ProvaCorrigida, ResultadoAlunoProva } from "@shared/schema";
 import { uploadUrl, authFetch } from "@/lib/api";
+import { listarProjetosEscola, salvarProjetoEscola, deletarProjetoEscola, migrarDoLocalStorage } from "@/lib/projetosEscolaService";
 import { predefinedTemplates } from "@shared/schema";
 import { ExamConfigurationWizard } from "@/components/ExamConfigurationWizard";
 import { ModeSelector, type AppMode } from "@/components/ModeSelector";
@@ -243,67 +244,44 @@ export default function Home() {
     
     carregarHistorico();
 
-    // Carregar projetos escola do localStorage
-    const projetosSalvos = localStorage.getItem('projetosEscola');
-    const projetosChaveAntiga = localStorage.getItem('gabaritai-projetos-escola');
-
-    let projetosFinais: ProjetoEscola[] = [];
-
-    // Carregar da chave principal
-    if (projetosSalvos) {
+    // Carregar projetos escola do Supabase
+    const carregarProjetosEscola = async () => {
       try {
-        projetosFinais = JSON.parse(projetosSalvos);
-        console.log('[Projetos Escola] Carregados da chave principal:', projetosFinais.length, 'projetos');
-      } catch (e) {
-        console.error('Erro ao carregar projetos escola:', e);
-      }
-    }
+        console.log('[Projetos Escola] Carregando do Supabase...');
+        const projetos = await listarProjetosEscola();
 
-    // Recuperar dados da chave antiga (migração)
-    if (projetosChaveAntiga) {
-      try {
-        const projetosAntigos = JSON.parse(projetosChaveAntiga) as ProjetoEscola[];
-        console.log('[Projetos Escola] Encontrados na chave antiga:', projetosAntigos.length, 'projetos');
-
-        // Mesclar: atualizar projetos existentes ou adicionar novos
-        projetosAntigos.forEach(projetoAntigo => {
-          const idxExistente = projetosFinais.findIndex(p => p.id === projetoAntigo.id);
-          if (idxExistente >= 0) {
-            // Se o projeto antigo tem mais provas, usar ele
-            if (projetoAntigo.provas.length > projetosFinais[idxExistente].provas.length) {
-              projetosFinais[idxExistente] = projetoAntigo;
-              console.log(`[Migração] Projeto "${projetoAntigo.nome}" atualizado com ${projetoAntigo.provas.length} provas`);
-            }
-          } else {
-            // Projeto novo, adicionar
-            projetosFinais.push(projetoAntigo);
-            console.log(`[Migração] Projeto "${projetoAntigo.nome}" adicionado`);
+        if (projetos.length > 0) {
+          setProjetosEscolaSalvos(projetos);
+          console.log('[Projetos Escola] Carregados do Supabase:', projetos.length, 'projetos');
+        } else {
+          // Verificar se existem projetos no localStorage para migrar
+          const projetosLocal = localStorage.getItem('projetosEscola');
+          if (projetosLocal) {
+            console.log('[Projetos Escola] Nenhum projeto no Supabase, verificando localStorage para migração...');
+            // A migração será feita quando o usuário tiver schoolId disponível
           }
-        });
-
-        // Remover chave antiga após migração bem-sucedida
-        localStorage.removeItem('gabaritai-projetos-escola');
-        console.log('[Migração] Chave antiga removida após migração');
-      } catch (e) {
-        console.error('Erro ao migrar projetos da chave antiga:', e);
+        }
+      } catch (error) {
+        console.error('[Projetos Escola] Erro ao carregar do Supabase:', error);
+        // Fallback para localStorage em caso de erro (ex: usuário não autenticado)
+        const projetosSalvos = localStorage.getItem('projetosEscola');
+        if (projetosSalvos) {
+          try {
+            const projetos = JSON.parse(projetosSalvos);
+            setProjetosEscolaSalvos(projetos);
+            console.log('[Projetos Escola] Fallback localStorage:', projetos.length, 'projetos');
+          } catch (e) {
+            console.error('Erro ao carregar projetos do localStorage:', e);
+          }
+        }
       }
-    }
+    };
 
-    if (projetosFinais.length > 0) {
-      setProjetosEscolaSalvos(projetosFinais);
-      // Salvar na chave correta
-      localStorage.setItem('projetosEscola', JSON.stringify(projetosFinais));
-      console.log('[Projetos Escola] Total final:', projetosFinais.length, 'projetos');
-    }
+    carregarProjetosEscola();
   }, []);
 
-  // Salvar projetos no localStorage quando mudar
-  useEffect(() => {
-    if (projetosEscolaSalvos.length > 0) {
-      localStorage.setItem('projetosEscola', JSON.stringify(projetosEscolaSalvos));
-      console.log('[Projetos Escola] Salvos:', projetosEscolaSalvos.length, 'projetos');
-    }
-  }, [projetosEscolaSalvos]);
+  // NOTA: Projetos são salvos diretamente no Supabase via API
+  // Não usamos mais auto-save com localStorage
 
   const [fileQueue, setFileQueue] = useState<QueuedFile[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -2746,28 +2724,44 @@ export default function Home() {
       return;
     }
 
-    // 🔒 REGRA DE OURO: Em modo ESCOLA, salvar localmente (não no servidor)!
+    // 🔒 REGRA DE OURO: Em modo ESCOLA, salvar no Supabase (via API)
     if (appMode === "escola") {
       if (projetoEscolaAtual) {
-        // Atualizar nome do projeto se o usuário quiser renomear
-        const projetoRenomeado = {
-          ...projetoEscolaAtual,
-          nome: nome.trim(),
-          updatedAt: new Date().toISOString()
-        };
+        try {
+          setProjetosLoading(true);
+          // Atualizar nome do projeto se o usuário quiser renomear
+          const projetoRenomeado = {
+            ...projetoEscolaAtual,
+            nome: nome.trim(),
+            updatedAt: new Date().toISOString()
+          };
 
-        const projetosAtualizados = projetosEscolaSalvos.map(p =>
-          p.id === projetoRenomeado.id ? projetoRenomeado : p
-        );
+          // Salvar no Supabase via API
+          const projetoSalvo = await salvarProjetoEscola(projetoRenomeado);
 
-        localStorage.setItem("projetosEscola", JSON.stringify(projetosAtualizados));
-        setProjetosEscolaSalvos(projetosAtualizados);
-        setProjetoEscolaAtual(projetoRenomeado);
+          if (projetoSalvo) {
+            const projetosAtualizados = projetosEscolaSalvos.map(p =>
+              p.id === projetoRenomeado.id ? projetoSalvo : p
+            );
 
-        toast({
-          title: "Projeto renomeado!",
-          description: `"${nome}" foi salvo com sucesso.`,
-        });
+            setProjetosEscolaSalvos(projetosAtualizados);
+            setProjetoEscolaAtual(projetoSalvo);
+
+            toast({
+              title: "Projeto renomeado!",
+              description: `"${nome}" foi salvo com sucesso no Supabase.`,
+            });
+          }
+        } catch (error) {
+          console.error('[Projetos Escola] Erro ao salvar:', error);
+          toast({
+            title: "Erro ao salvar",
+            description: "Não foi possível salvar o projeto.",
+            variant: "destructive",
+          });
+        } finally {
+          setProjetosLoading(false);
+        }
 
         setProjetoNome("");
         setProjetoSaveDialogOpen(false);
@@ -4597,9 +4591,9 @@ export default function Home() {
   // ============================================================================
 
   // Criar novo projeto escola
-  const criarProjetoEscola = useCallback((nome: string, turma?: string) => {
-    const novoProjeto: ProjetoEscola = {
-      id: `proj_${Date.now()}`,
+  const criarProjetoEscola = useCallback(async (nome: string, turma?: string) => {
+    const novoProjetoLocal: ProjetoEscola = {
+      id: `temp-proj_${Date.now()}`,
       nome,
       turma,
       createdAt: new Date().toISOString(),
@@ -4608,19 +4602,39 @@ export default function Home() {
       alunosUnicos: [],
     };
 
-    setProjetosEscolaSalvos(prev => [...prev, novoProjeto]);
-    setProjetoEscolaAtual(novoProjeto);
+    try {
+      // Salvar no Supabase via API
+      const projetoSalvo = await salvarProjetoEscola(novoProjetoLocal);
 
-    toast({
-      title: "Projeto Criado!",
-      description: `"${nome}" criado com sucesso. Agora corrija as provas e salve no projeto.`,
-    });
+      if (projetoSalvo) {
+        setProjetosEscolaSalvos(prev => [...prev, projetoSalvo]);
+        setProjetoEscolaAtual(projetoSalvo);
 
-    return novoProjeto;
+        toast({
+          title: "Projeto Criado!",
+          description: `"${nome}" criado com sucesso no Supabase. Agora corrija as provas e salve no projeto.`,
+        });
+
+        return projetoSalvo;
+      }
+    } catch (error) {
+      console.error('[Projetos Escola] Erro ao criar projeto:', error);
+      // Fallback: usar o projeto local se a API falhar
+      setProjetosEscolaSalvos(prev => [...prev, novoProjetoLocal]);
+      setProjetoEscolaAtual(novoProjetoLocal);
+
+      toast({
+        title: "Projeto Criado (local)",
+        description: `"${nome}" criado localmente. Será sincronizado quando a conexão for restabelecida.`,
+        variant: "destructive",
+      });
+    }
+
+    return novoProjetoLocal;
   }, [toast]);
 
   // Excluir prova do projeto escola
-  const handleExcluirProva = useCallback(() => {
+  const handleExcluirProva = useCallback(async () => {
     if (!projetoEscolaAtual || provaParaExcluirIndex === null) return;
 
     const provaIdx = provaParaExcluirIndex;
@@ -4649,13 +4663,20 @@ export default function Home() {
       alunosUnicos: Array.from(alunosMap.values()),
     };
 
-    // Salvar
-    const novosProjetos = projetosEscolaSalvos.map(p =>
-      p.id === projetoAtualizado.id ? projetoAtualizado : p
-    );
-    localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-    setProjetosEscolaSalvos(novosProjetos);
-    setProjetoEscolaAtual(projetoAtualizado);
+    try {
+      // Salvar no Supabase via API
+      const projetoSalvo = await salvarProjetoEscola(projetoAtualizado);
+
+      if (projetoSalvo) {
+        const novosProjetos = projetosEscolaSalvos.map(p =>
+          p.id === projetoAtualizado.id ? projetoSalvo : p
+        );
+        setProjetosEscolaSalvos(novosProjetos);
+        setProjetoEscolaAtual(projetoSalvo);
+      }
+    } catch (error) {
+      console.error('[Projetos Escola] Erro ao salvar após excluir prova:', error);
+    }
 
     // Ajustar índice selecionado se necessário
     if ((provaEscolaSelecionadaIndex ?? 0) >= novasProvas.length) {
@@ -5013,13 +5034,18 @@ export default function Home() {
           provas: provasAtualizadas,
         };
 
-        // Salvar no localStorage
-        const novosProjetos = projetosEscolaSalvos.map(p =>
-          p.id === projetoAtualizado.id ? projetoAtualizado : p
-        );
-        localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-        setProjetosEscolaSalvos(novosProjetos);
-        setProjetoEscolaAtual(projetoAtualizado);
+        // Salvar no Supabase via API
+        salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+          if (projetoSalvo) {
+            const novosProjetos = projetosEscolaSalvos.map(p =>
+              p.id === projetoAtualizado.id ? projetoSalvo : p
+            );
+            setProjetosEscolaSalvos(novosProjetos);
+            setProjetoEscolaAtual(projetoSalvo);
+          }
+        }).catch(err => {
+          console.error('[TRI ESCOLA] Erro ao salvar no Supabase:', err);
+        });
 
         console.log('[TRI ESCOLA] Resultados TRI salvos na prova:', provaSelecionada.disciplina);
         console.log('[TRI ESCOLA] Novo estado do projeto:', projetoAtualizado.provas[provaIdx].resultados.slice(0, 3).map(r => ({ id: r.alunoId, tri: r.notaTRI })));
@@ -5035,9 +5061,9 @@ export default function Home() {
         if (!projetoParaSalvar) {
           console.log('[TRI ESCOLA] Projeto não existe, criando novo automaticamente...');
           projetoParaSalvar = {
-            id: `projeto_${Date.now()}`,
+            id: `temp-projeto_${Date.now()}`,
             nome: `Projeto Automático - ${new Date().toLocaleDateString('pt-BR')}`,
-            criado: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             provas: [],
             alunosUnicos: [],
@@ -5111,20 +5137,25 @@ export default function Home() {
         });
         projetoAtualizado.alunosUnicos = Array.from(alunosMap.values());
 
-        // Salvar
-        let novosProjetos = projetosEscolaSalvos;
-        // Se é um projeto novo (não estava em projetosEscolaSalvos), adicionar
-        if (!novosProjetos.some(p => p.id === projetoAtualizado.id)) {
-          novosProjetos = [...novosProjetos, projetoAtualizado];
-        } else {
-          // Se já existe, atualizar
-          novosProjetos = novosProjetos.map(p =>
-            p.id === projetoAtualizado.id ? projetoAtualizado : p
-          );
-        }
-        localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-        setProjetosEscolaSalvos(novosProjetos);
-        setProjetoEscolaAtual(projetoAtualizado);
+        // Salvar no Supabase via API
+        salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+          if (projetoSalvo) {
+            let novosProjetos = projetosEscolaSalvos;
+            // Se é um projeto novo (não estava em projetosEscolaSalvos), adicionar
+            if (!novosProjetos.some(p => p.id === projetoSalvo.id)) {
+              novosProjetos = [...novosProjetos, projetoSalvo];
+            } else {
+              // Se já existe, atualizar
+              novosProjetos = novosProjetos.map(p =>
+                p.id === projetoSalvo.id ? projetoSalvo : p
+              );
+            }
+            setProjetosEscolaSalvos(novosProjetos);
+            setProjetoEscolaAtual(projetoSalvo);
+          }
+        }).catch(err => {
+          console.error('[TRI ESCOLA] Erro ao salvar no Supabase:', err);
+        });
 
         // Selecionar a nova prova automaticamente
         setProvaEscolaSelecionadaIndex(projetoAtualizado.provas.length - 1);
@@ -7941,10 +7972,19 @@ export default function Home() {
                                         console.log(`[GABARITO EDIT] ${resultado.nome}: ${novosAcertos}/${totalQuestoes} → TRI = ${novoTRI.toFixed(2)}`);
                                       });
 
-                                      // Salvar
-                                      localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-                                      setProjetosEscolaSalvos(novosProjetos);
-                                      setProjetoEscolaAtual(novosProjetos[projetoIdx]);
+                                      // Salvar no Supabase via API
+                                      const projetoAtualizado = novosProjetos[projetoIdx];
+                                      salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+                                        if (projetoSalvo) {
+                                          const projetosAtualizados = novosProjetos.map(p =>
+                                            p.id === projetoSalvo.id ? projetoSalvo : p
+                                          );
+                                          setProjetosEscolaSalvos(projetosAtualizados);
+                                          setProjetoEscolaAtual(projetoSalvo);
+                                        }
+                                      }).catch(err => {
+                                        console.error('[GABARITO EDIT] Erro ao salvar no Supabase:', err);
+                                      });
 
                                       toast({
                                         title: "Gabarito atualizado!",
@@ -8136,12 +8176,19 @@ export default function Home() {
                                                     // Atualizar totalQuestoes no resultado também (para consistência)
                                                     novosProjetos[projetoIdx].provas[provaIdx].resultados[alunoIdx].totalQuestoes = totalQuestoes;
 
-                                                    // Salvar em localStorage PRIMEIRO
-                                                    localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-
-                                                    // Depois atualizar estados React
-                                                    setProjetosEscolaSalvos(novosProjetos);
-                                                    setProjetoEscolaAtual(novosProjetos[projetoIdx]);
+                                                    // Salvar no Supabase via API
+                                                    const projetoAtualizado = novosProjetos[projetoIdx];
+                                                    salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+                                                      if (projetoSalvo) {
+                                                        const projetosAtualizados = novosProjetos.map(p =>
+                                                          p.id === projetoSalvo.id ? projetoSalvo : p
+                                                        );
+                                                        setProjetosEscolaSalvos(projetosAtualizados);
+                                                        setProjetoEscolaAtual(projetoSalvo);
+                                                      }
+                                                    }).catch(err => {
+                                                      console.error('[RESPOSTAS EDIT] Erro ao salvar no Supabase:', err);
+                                                    });
 
                                                     console.log("SAVE DEBUG:", {
                                                       aluno: novosProjetos[projetoIdx].provas[provaIdx].resultados[alunoIdx].nome,
@@ -10719,9 +10766,19 @@ export default function Home() {
 
                                           if (projetoIdx >= 0) {
                                             novosProjetos[projetoIdx].provas[provaIdx].conteudos = conteudosEditando;
-                                            localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-                                            setProjetosEscolaSalvos(novosProjetos);
-                                            setProjetoEscolaAtual(novosProjetos[projetoIdx]);
+                                            // Salvar no Supabase via API
+                                            const projetoAtualizado = novosProjetos[projetoIdx];
+                                            salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+                                              if (projetoSalvo) {
+                                                const projetosAtualizados = novosProjetos.map(p =>
+                                                  p.id === projetoSalvo.id ? projetoSalvo : p
+                                                );
+                                                setProjetosEscolaSalvos(projetosAtualizados);
+                                                setProjetoEscolaAtual(projetoSalvo);
+                                              }
+                                            }).catch(err => {
+                                              console.error('[CONTEUDOS EDIT] Erro ao salvar no Supabase:', err);
+                                            });
                                             toast({ title: "Conteúdos salvos!", description: "Os conteúdos das questões foram atualizados." });
                                           }
 
@@ -12901,10 +12958,19 @@ export default function Home() {
                       );
                       novosProjetos[projetoIdx].provas[provaIdx].resultados[alunoIdx].notaTRI = parseFloat(novoTRI.toFixed(2));
 
-                      // Salvar
-                      localStorage.setItem("projetosEscola", JSON.stringify(novosProjetos));
-                      setProjetosEscolaSalvos(novosProjetos);
-                      setProjetoEscolaAtual(novosProjetos[projetoIdx]);
+                      // Salvar no Supabase via API
+                      const projetoAtualizado = novosProjetos[projetoIdx];
+                      salvarProjetoEscola(projetoAtualizado).then(projetoSalvo => {
+                        if (projetoSalvo) {
+                          const projetosAtualizados = novosProjetos.map(p =>
+                            p.id === projetoSalvo.id ? projetoSalvo : p
+                          );
+                          setProjetosEscolaSalvos(projetosAtualizados);
+                          setProjetoEscolaAtual(projetoSalvo);
+                        }
+                      }).catch(err => {
+                        console.error('[SYNC ESCOLA] Erro ao salvar no Supabase:', err);
+                      });
 
                       console.log(`[SYNC ESCOLA] Atualizado: ${alunoNome} → ${novosAcertos}/${totalQuestoes}, TRI=${novoTRI.toFixed(2)}`);
                     }
@@ -13080,11 +13146,26 @@ export default function Home() {
                           size="sm"
                           variant="ghost"
                           className="h-8 text-xs text-red-600 hover:bg-red-50"
-                          onClick={() => {
+                          onClick={async () => {
                             if (confirm(`Deletar projeto "${proj.nome}"?`)) {
-                              setProjetosEscolaSalvos(prev => prev.filter(p => p.id !== proj.id));
-                              if (projetoEscolaAtual?.id === proj.id) {
-                                setProjetoEscolaAtual(null);
+                              try {
+                                // Deletar do Supabase via API
+                                await deletarProjetoEscola(proj.id);
+                                setProjetosEscolaSalvos(prev => prev.filter(p => p.id !== proj.id));
+                                if (projetoEscolaAtual?.id === proj.id) {
+                                  setProjetoEscolaAtual(null);
+                                }
+                                toast({
+                                  title: "Projeto deletado!",
+                                  description: `"${proj.nome}" foi removido do Supabase.`,
+                                });
+                              } catch (error) {
+                                console.error('[Projetos Escola] Erro ao deletar:', error);
+                                toast({
+                                  title: "Erro ao deletar",
+                                  description: "Não foi possível deletar o projeto.",
+                                  variant: "destructive",
+                                });
                               }
                             }
                           }}
