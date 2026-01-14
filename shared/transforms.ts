@@ -25,6 +25,11 @@ export interface StudentDataFrontend {
     ch?: number;
     cn?: number;
     mt?: number;
+    // Aceita também maiúsculas (formato usado pelo frontend)
+    LC?: number;
+    CH?: number;
+    CN?: number;
+    MT?: number;
   };
   confidence?: number;
 }
@@ -105,10 +110,10 @@ export function transformStudentsForSupabase(
       blank_answers: blankAnswers,
       tri_theta: student.triTheta ?? null,
       tri_score: student.triScore ?? null,
-      tri_lc: student.areaScores?.lc ?? null,
-      tri_ch: student.areaScores?.ch ?? null,
-      tri_cn: student.areaScores?.cn ?? null,
-      tri_mt: student.areaScores?.mt ?? null,
+      tri_lc: student.areaScores?.lc ?? student.areaScores?.LC ?? null,
+      tri_ch: student.areaScores?.ch ?? student.areaScores?.CH ?? null,
+      tri_cn: student.areaScores?.cn ?? student.areaScores?.CN ?? null,
+      tri_mt: student.areaScores?.mt ?? student.areaScores?.MT ?? null,
       confidence: student.confidence ?? null,
     };
   });

@@ -29,6 +29,8 @@ export async function requireAuth(
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
+      console.log('[AUTH] Missing or invalid Authorization header:', authHeader);
+      // console.log('[AUTH] Headers received:', JSON.stringify(req.headers, null, 2));
       res.status(401).json({
         error: 'Token de autenticação ausente',
         code: 'MISSING_TOKEN'

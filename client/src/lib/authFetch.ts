@@ -14,6 +14,8 @@ export async function authFetch(
 
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
+  } else {
+    console.warn('[authFetch] No active session found during request to:', url);
   }
 
   return fetch(url, {
