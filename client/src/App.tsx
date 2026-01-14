@@ -11,6 +11,7 @@ import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import SignupPage from "@/pages/signup";
+import PrimeiroAcessoPage from "@/pages/primeiro-acesso";
 import StudentDashboard from "@/pages/student-dashboard";
 import AdminPage from "@/pages/admin";
 import EscolaPage from "@/pages/escola";
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/signup" component={SignupPage} />
+      <Route path="/primeiro-acesso" component={PrimeiroAcessoPage} />
       <Route path="/unauthorized" component={UnauthorizedPage} />
 
       {/* Rota protegida - SUPER_ADMIN (Xandão/XTRI) */}

@@ -154,9 +154,9 @@ export default function LoginPage() {
               </Link>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Não tem conta?{' '}
-              <Link href="/signup" className="text-blue-600 hover:underline">
-                Cadastre-se
+              Primeiro acesso?{' '}
+              <Link href="/primeiro-acesso" className="text-blue-600 hover:underline">
+                Criar senha
               </Link>
             </p>
           </CardFooter>
