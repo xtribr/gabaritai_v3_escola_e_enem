@@ -3795,13 +3795,14 @@ Para cada disciplina:
     return `${matricula}@${schoolSlug}.gabaritai.com`;
   }
 
-  // POST /api/admin/import-students - Importar alunos em lote (TABELA STUDENTS)
+  // POST /api/admin/import-students - Importar alunos em lote COM CONTA AUTH
   // 🔒 PROTECTED: Requer autenticação + role admin
-  // ✅ NOVA ABORDAGEM: Insere na tabela 'students' separada do auth.users
-  // Alunos podem criar conta posteriormente para acessar dashboard
-  // v2 - 2024-01-11 - Usando tabela students
+  // ✅ v3 - 2025-01-14 - Cria Auth + profiles + students com senha padrão
+  // Alunos devem trocar senha no primeiro acesso (must_change_password)
   app.post("/api/admin/import-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    console.log("[IMPORT v2] Iniciando importação na tabela STUDENTS");
+    const DEFAULT_PASSWORD = 'escola123';
+    console.log("[IMPORT v3] Iniciando importação COM criação de conta Auth");
+
     try {
       const { students, schoolId } = req.body as {
         students: ImportStudentInput[];
@@ -3824,7 +3825,7 @@ Para cada disciplina:
         return;
       }
 
-      console.log(`[IMPORT] Iniciando importação de ${students.length} aluno(s) para escola ${schoolId}...`);
+      console.log(`[IMPORT] Importando ${students.length} aluno(s) para escola ${schoolId}...`);
 
       const results: ImportStudentResult[] = [];
       let created = 0;
@@ -3849,62 +3850,134 @@ Para cada disciplina:
           continue;
         }
 
+        const email = `${matricula}@escola.gabaritai.com`;
+
         try {
-          // Verificar se já existe um aluno com essa matrícula na escola
+          // Verificar se já existe aluno na tabela students
           const { data: existingStudent } = await supabaseAdmin
             .from('students')
-            .select('id')
+            .select('id, profile_id')
             .eq('school_id', schoolId)
             .eq('matricula', matricula)
             .maybeSingle();
 
-          if (existingStudent) {
-            // Atualizar aluno existente
-            const { error: updateError } = await supabaseAdmin
-              .from('students')
-              .update({
-                name: nome,
-                turma: turma || null
-              })
-              .eq('id', existingStudent.id);
+          // Verificar se já existe profile com este email
+          const { data: existingProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('email', email)
+            .maybeSingle();
 
-            if (updateError) {
-              throw new Error(`Erro ao atualizar: ${updateError.message}`);
-            }
+          if (existingStudent && existingStudent.profile_id) {
+            // Aluno já existe COM conta Auth - apenas atualizar dados
+            await supabaseAdmin.from('students').update({
+              name: nome,
+              turma: turma || null
+            }).eq('id', existingStudent.id);
+
+            await supabaseAdmin.from('profiles').update({
+              name: nome,
+              turma: turma || null
+            }).eq('id', existingStudent.profile_id);
 
             results.push({
               matricula,
               nome,
               turma: turma || '',
-              email: '',
-              senha: '',
+              email,
+              senha: '(mantida)',
               status: 'updated',
-              message: 'Dados atualizados'
+              message: 'Dados atualizados (conta Auth existente)'
             });
             updated++;
-          } else {
-            // Criar novo aluno na tabela students
-            const { error: insertError } = await supabaseAdmin
-              .from('students')
-              .insert({
+          } else if (existingProfile) {
+            // Profile existe mas students não está linkado
+            if (existingStudent) {
+              await supabaseAdmin.from('students').update({
+                name: nome,
+                turma: turma || null,
+                profile_id: existingProfile.id
+              }).eq('id', existingStudent.id);
+            } else {
+              await supabaseAdmin.from('students').insert({
                 school_id: schoolId,
                 matricula,
                 name: nome,
-                turma: turma || null
+                turma: turma || null,
+                profile_id: existingProfile.id
               });
-
-            if (insertError) {
-              throw new Error(`Erro ao criar: ${insertError.message}`);
             }
 
             results.push({
               matricula,
               nome,
               turma: turma || '',
-              email: '',
-              senha: '',
+              email,
+              senha: '(conta existente)',
+              status: 'updated',
+              message: 'Vinculado a conta existente'
+            });
+            updated++;
+          } else {
+            // Criar nova conta Auth + profile + students
+            const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email,
+              password: DEFAULT_PASSWORD,
+              email_confirm: true,
+              user_metadata: {
+                must_change_password: true,
+                name: nome,
+                role: 'student'
+              }
+            });
+
+            if (authError) {
+              throw new Error(`Erro ao criar conta Auth: ${authError.message}`);
+            }
+
+            // Criar profile
+            const { error: profileError } = await supabaseAdmin.from('profiles').insert({
+              id: authUser.user.id,
+              email,
+              name: nome,
+              role: 'student',
+              school_id: schoolId,
+              student_number: matricula,
+              turma: turma || null,
+              must_change_password: true
+            });
+
+            if (profileError) {
+              console.warn(`[IMPORT] Profile insert warning for ${matricula}:`, profileError.message);
+            }
+
+            // Criar/atualizar students com profile_id
+            if (existingStudent) {
+              await supabaseAdmin.from('students').update({
+                name: nome,
+                turma: turma || null,
+                profile_id: authUser.user.id
+              }).eq('id', existingStudent.id);
+            } else {
+              await supabaseAdmin.from('students').insert({
+                school_id: schoolId,
+                matricula,
+                name: nome,
+                turma: turma || null,
+                profile_id: authUser.user.id
+              });
+            }
+
+            console.log(`[IMPORT] ✓ ${nome} (${matricula}) - conta criada`);
+
+            results.push({
+              matricula,
+              nome,
+              turma: turma || '',
+              email,
+              senha: DEFAULT_PASSWORD,
               status: 'created',
-              message: 'Aluno cadastrado'
+              message: 'Conta criada com sucesso'
             });
             created++;
           }
@@ -3914,7 +3987,7 @@ Para cada disciplina:
             matricula,
             nome,
             turma: turma || '',
-            email: '',
+            email,
             senha: '',
             status: 'error',
             message: error.message
@@ -3935,8 +4008,9 @@ Para cada disciplina:
         },
         results,
         info: {
-          message: "Alunos importados com sucesso!",
-          loginInstructions: "Alunos podem criar conta para acessar resultados via matrícula"
+          message: "Alunos importados com contas de acesso!",
+          defaultPassword: DEFAULT_PASSWORD,
+          loginInstructions: "Alunos devem fazer login com email {matricula}@escola.gabaritai.com e trocar a senha no primeiro acesso"
         }
       });
     } catch (error: any) {
@@ -4097,39 +4171,88 @@ Para cada disciplina:
     }
   });
 
-  // DELETE /api/admin/students/:id - Deletar aluno da tabela students
+  // DELETE /api/admin/students/:id - Deletar aluno (cascade: Auth + profiles + students)
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // ✅ v2 - 2025-01-14 - Cascade delete através de todas as tabelas
   app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      // Buscar dados do aluno para log
-      const { data: student } = await supabaseAdmin
+      // 1. Tentar buscar na tabela students primeiro
+      const { data: studentRecord } = await supabaseAdmin
         .from('students')
-        .select('matricula, name')
+        .select('id, matricula, name, profile_id')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-      if (!student) {
-        res.status(404).json({ error: "Aluno não encontrado" });
-        return;
+      // 2. Se não encontrou em students, pode ser um ID de profile
+      if (!studentRecord) {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('id, name, student_number, email')
+          .eq('id', id)
+          .eq('role', 'student')
+          .maybeSingle();
+
+        if (!profile) {
+          return res.status(404).json({ error: "Aluno não encontrado" });
+        }
+
+        // Deletar Auth user
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(id);
+          console.log(`[DELETE] Auth user ${id} removido`);
+        } catch (authErr: any) {
+          console.warn(`[DELETE] Auth warning:`, authErr.message);
+        }
+
+        // Deletar profile (students será atualizado via FK SET NULL)
+        await supabaseAdmin.from('profiles').delete().eq('id', id);
+
+        // Deletar registros em students que apontavam para este profile
+        await supabaseAdmin.from('students').delete().eq('profile_id', id);
+
+        console.log(`[DELETE] Aluno ${profile.name} (profile) removido completamente`);
+        return res.json({
+          success: true,
+          message: `Aluno ${profile.name} removido completamente`
+        });
       }
 
-      // Deletar aluno
+      // 3. Encontrou em students - verificar se tem profile_id
+      if (studentRecord.profile_id) {
+        // Deletar Auth user primeiro
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(studentRecord.profile_id);
+          console.log(`[DELETE] Auth user ${studentRecord.profile_id} removido`);
+        } catch (authErr: any) {
+          console.warn(`[DELETE] Auth warning:`, authErr.message);
+        }
+
+        // Deletar profile
+        try {
+          await supabaseAdmin.from('profiles').delete().eq('id', studentRecord.profile_id);
+          console.log(`[DELETE] Profile ${studentRecord.profile_id} removido`);
+        } catch (profileErr: any) {
+          console.warn(`[DELETE] Profile warning:`, profileErr.message);
+        }
+      }
+
+      // 4. Deletar da tabela students
       const { error: deleteError } = await supabaseAdmin
         .from('students')
         .delete()
         .eq('id', id);
 
       if (deleteError) {
-        throw new Error(`Erro ao deletar: ${deleteError.message}`);
+        throw new Error(`Erro ao deletar students: ${deleteError.message}`);
       }
 
-      console.log(`[DELETE STUDENT] Aluno ${student.name} (${student.matricula}) deletado`);
+      console.log(`[DELETE] Aluno ${studentRecord.name} (${studentRecord.matricula}) removido completamente`);
 
       res.json({
         success: true,
-        message: `Aluno ${student.name} deletado com sucesso`
+        message: `Aluno ${studentRecord.name} removido completamente`
       });
     } catch (error: any) {
       console.error("[DELETE STUDENT]", error);
@@ -4142,50 +4265,166 @@ Para cada disciplina:
 
   // POST /api/admin/students/:id/reset-password - Resetar senha do aluno (Auth)
   // 🔒 PROTECTED: Requer autenticação + role admin
-  // NOTA: Funciona apenas para alunos que já criaram conta (profile_id linkado)
+  // ✅ v2 - 2025-01-14 - Cria Auth account se aluno não tiver (importados via CSV)
   app.post("/api/admin/students/:id/reset-password", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    const DEFAULT_PASSWORD = 'SENHA123';
+    const DEFAULT_PASSWORD = 'escola123';
 
     try {
       const { id } = req.params;
 
-      // Buscar dados do aluno
-      const { data: student } = await supabaseAdmin
+      // Primeiro: tentar encontrar em profiles (aluno já tem Auth)
+      const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('name, student_number, email')
+        .select('id, name, student_number, email')
+        .eq('id', id)
+        .single();
+
+      if (profile) {
+        // Aluno já tem Auth - apenas resetar senha
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+          password: DEFAULT_PASSWORD,
+          user_metadata: {
+            must_change_password: true
+          }
+        });
+
+        if (authError) {
+          throw new Error(`Erro ao resetar senha: ${authError.message}`);
+        }
+
+        // Atualizar flag no profiles também
+        await supabaseAdmin
+          .from('profiles')
+          .update({ must_change_password: true })
+          .eq('id', id);
+
+        console.log(`[RESET] Senha resetada para ${profile.name} (${profile.student_number})`);
+
+        res.json({
+          success: true,
+          message: `Senha de ${profile.name} resetada para ${DEFAULT_PASSWORD}`,
+          student: {
+            id,
+            name: profile.name,
+            student_number: profile.student_number,
+            email: profile.email
+          },
+          newPassword: DEFAULT_PASSWORD,
+          mustChangePassword: true
+        });
+        return;
+      }
+
+      // Segundo: buscar em students (aluno importado via CSV sem Auth)
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('id, nome, matricula, turma, escola_id, profile_id')
         .eq('id', id)
         .single();
 
       if (!student) {
-        res.status(404).json({ error: "Aluno não encontrado" });
+        res.status(404).json({ error: "Aluno não encontrado em nenhuma tabela" });
         return;
       }
 
-      // Resetar senha no Auth
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+      // Se já tem profile_id, usar esse ID para resetar
+      if (student.profile_id) {
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(student.profile_id, {
+          password: DEFAULT_PASSWORD,
+          user_metadata: {
+            must_change_password: true
+          }
+        });
+
+        if (authError) {
+          throw new Error(`Erro ao resetar senha: ${authError.message}`);
+        }
+
+        await supabaseAdmin
+          .from('profiles')
+          .update({ must_change_password: true })
+          .eq('id', student.profile_id);
+
+        console.log(`[RESET] Senha resetada para ${student.nome} (${student.matricula}) via profile_id`);
+
+        res.json({
+          success: true,
+          message: `Senha de ${student.nome} resetada para ${DEFAULT_PASSWORD}`,
+          student: {
+            id: student.profile_id,
+            name: student.nome,
+            student_number: student.matricula
+          },
+          newPassword: DEFAULT_PASSWORD,
+          mustChangePassword: true
+        });
+        return;
+      }
+
+      // Terceiro: Aluno sem Auth - CRIAR conta Auth + profile + linkar
+      console.log(`[RESET] Aluno ${student.nome} sem Auth - criando conta...`);
+
+      // Gerar email único para o aluno
+      const emailBase = student.matricula.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const email = `${emailBase}@aluno.gabaritai.com`;
+
+      // Criar usuário no Supabase Auth
+      const { data: authUser, error: authCreateError } = await supabaseAdmin.auth.admin.createUser({
+        email,
         password: DEFAULT_PASSWORD,
+        email_confirm: true,
         user_metadata: {
-          must_change_password: true
+          must_change_password: true,
+          name: student.nome,
+          role: 'student'
         }
       });
 
-      if (authError) {
-        throw new Error(`Erro ao resetar senha: ${authError.message}`);
+      if (authCreateError) {
+        throw new Error(`Erro ao criar conta Auth: ${authCreateError.message}`);
       }
 
-      console.log(`[RESET] Senha resetada para ${student.name} (${student.student_number})`);
+      // Criar profile para o usuário
+      const { data: newProfile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: authUser.user.id,
+          email,
+          name: student.nome,
+          role: 'student',
+          escola_id: student.escola_id,
+          student_number: student.matricula,
+          must_change_password: true
+        })
+        .select()
+        .single();
+
+      if (profileError) {
+        // Rollback: deletar Auth user se profile falhou
+        await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+        throw new Error(`Erro ao criar profile: ${profileError.message}`);
+      }
+
+      // Linkar profile_id no students
+      await supabaseAdmin
+        .from('students')
+        .update({ profile_id: authUser.user.id })
+        .eq('id', student.id);
+
+      console.log(`[RESET] Conta Auth criada para ${student.nome} (${email})`);
 
       res.json({
         success: true,
-        message: `Senha de ${student.name} resetada para ${DEFAULT_PASSWORD}`,
+        message: `Conta criada para ${student.nome} com senha ${DEFAULT_PASSWORD}`,
         student: {
-          id,
-          name: student.name,
-          student_number: student.student_number,
-          email: student.email
+          id: authUser.user.id,
+          name: student.nome,
+          student_number: student.matricula,
+          email
         },
         newPassword: DEFAULT_PASSWORD,
-        mustChangePassword: true
+        mustChangePassword: true,
+        accountCreated: true
       });
     } catch (error: any) {
       console.error("[RESET] Erro:", error);
@@ -4198,8 +4437,9 @@ Para cada disciplina:
 
   // POST /api/admin/students/reset-all-passwords - Resetar senha de TODOS os alunos
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // ✅ v2 - 2025-01-14 - Usar senha padrão 'escola123'
   app.post("/api/admin/students/reset-all-passwords", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    const DEFAULT_PASSWORD = 'SENHA123';
+    const DEFAULT_PASSWORD = 'escola123';
     const BATCH_SIZE = 5;
     const BATCH_DELAY_MS = 1500;
 
@@ -4282,91 +4522,51 @@ Para cada disciplina:
   // GET /api/admin/students-legacy - REMOVIDO: Usar o novo /api/admin/students
   // Este endpoint foi substituído pelo novo que usa a tabela 'students'
 
-  // POST /api/admin/reset-password - Resetar senha do aluno
+  // POST /api/admin/reset-password - Resetar senha do aluno (endpoint legado)
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // ✅ v2 - 2025-01-14 - Usar senha padrão 'escola123' com must_change_password
   app.post("/api/admin/reset-password", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'escola123';
+
     try {
-      const { studentId, matricula } = req.body;
+      const { studentId } = req.body;
 
       if (!studentId) {
         res.status(400).json({ error: "ID do aluno é obrigatório" });
         return;
       }
 
-      // Gerar nova senha
-      const novaSenha = `${matricula || 'aluno'}${Math.floor(1000 + Math.random() * 9000)}`;
-
       // Atualizar senha no Supabase Auth
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
         studentId,
-        { password: novaSenha }
+        {
+          password: DEFAULT_PASSWORD,
+          user_metadata: { must_change_password: true }
+        }
       );
 
       if (authError) {
         throw new Error(`Erro ao resetar senha: ${authError.message}`);
       }
 
+      // Atualizar flag no profiles também
+      await supabaseAdmin
+        .from('profiles')
+        .update({ must_change_password: true })
+        .eq('id', studentId);
+
       console.log(`[RESET-PWD] Senha resetada para aluno ${studentId}`);
 
       res.json({
         success: true,
-        novaSenha,
-        message: "Senha resetada com sucesso"
+        novaSenha: DEFAULT_PASSWORD,
+        message: "Senha resetada com sucesso",
+        mustChangePassword: true
       });
     } catch (error: any) {
       console.error("[RESET-PWD] Erro:", error);
       res.status(500).json({
         error: "Erro ao resetar senha",
-        details: error.message
-      });
-    }
-  });
-
-  // DELETE /api/admin/students/:id - Remover aluno
-  // 🔒 PROTECTED: Requer autenticação + role admin
-  app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-
-      // Buscar dados do aluno antes de deletar
-      const { data: student } = await supabaseAdmin
-        .from('profiles')
-        .select('name, student_number')
-        .eq('id', id)
-        .single();
-
-      if (!student) {
-        res.status(404).json({ error: "Aluno não encontrado" });
-        return;
-      }
-
-      // Deletar profile
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .delete()
-        .eq('id', id);
-
-      if (profileError) {
-        throw new Error(`Erro ao deletar profile: ${profileError.message}`);
-      }
-
-      // Deletar usuário do Auth
-      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-
-      if (authError) {
-        console.warn(`[DELETE] Profile deletado mas erro ao deletar auth user: ${authError.message}`);
-      }
-
-      console.log(`[DELETE] Aluno ${student.name} (${student.student_number}) removido`);
-
-      res.json({
-        success: true,
-        message: `Aluno ${student.name} removido com sucesso`
-      });
-    } catch (error: any) {
-      console.error("[DELETE] Erro:", error);
-      res.status(500).json({
-        error: "Erro ao remover aluno",
         details: error.message
       });
     }
