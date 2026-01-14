@@ -2,12 +2,14 @@
 
 Sistema completo para leitura automática de gabaritos do ENEM e outras provas, com extração de dados via OMR (Optical Mark Recognition), validação de qualidade com IA, cálculo TRI/TCT, análise pedagógica e exportação para Excel.
 
+![Tests](https://github.com/xtribr/gabaritai_v3_escola_e_enem/actions/workflows/test.yml/badge.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)
 
 ## 🎯 Visão Geral
 
@@ -203,6 +205,18 @@ gabaritosxtri/
 │   ├── omr.ts                  # Processamento OMR TypeScript (fallback)
 │   ├── chatgptOMR.ts           # Integração ChatGPT Vision
 │   ├── deepseekOCR.ts          # Integração DeepSeek-OCR
+│   ├── src/
+│   │   ├── calculations/       # Calculadoras TCT/TRI
+│   │   │   ├── tctCalculator.ts
+│   │   │   └── __tests__/      # Testes unitários
+│   │   └── processors/         # Processadores de dados
+│   │       ├── questionStatsProcessor.ts
+│   │       └── __tests__/      # Testes unitários
+│   ├── __tests__/              # Testes de integração API
+│   │   ├── setup.ts
+│   │   └── api/
+│   │       ├── health.test.ts
+│   │       └── calculate-scores.test.ts
 │   ├── reports/
 │   │   └── excelExporter.ts    # Exportação Excel
 │   └── vite.ts                 # Configuração Vite dev
@@ -215,7 +229,13 @@ gabaritosxtri/
 ├── ocr_service/                 # Serviço OCR (opcional)
 │   └── deepseek_ocr_api.py
 ├── shared/                      # Código compartilhado
-│   └── schema.ts               # Schemas Zod e tipos TypeScript
+│   ├── schema.ts               # Schemas Zod e tipos TypeScript
+│   └── __tests__/              # Testes de validação
+│       └── schema.test.ts
+├── .github/
+│   └── workflows/
+│       └── test.yml            # CI/CD GitHub Actions
+├── vitest.config.ts            # Configuração de testes
 ├── script/                      # Scripts de build
 │   └── build.ts                # Build para produção
 ├── tri/                         # Dados históricos TRI
@@ -320,6 +340,28 @@ npm run build
 # Inicia servidor de produção
 npm start
 ```
+
+### Testes
+
+O projeto possui uma suíte completa de testes com **45 testes** cobrindo:
+
+- **TCT Calculator** - Cálculo de notas (11 testes)
+- **Question Stats Processor** - Estatísticas de questões (10 testes)
+- **Schema Validation** - Validação de dados Zod (14 testes)
+- **API Integration** - Endpoints da API (10 testes)
+
+```bash
+# Rodar todos os testes
+npm run test
+
+# Rodar testes em modo watch
+npm run test:watch
+
+# Rodar com relatório de coverage
+npm run test:coverage
+```
+
+**CI/CD:** Os testes rodam automaticamente em cada Pull Request via GitHub Actions.
 
 ## 📡 API Endpoints
 
