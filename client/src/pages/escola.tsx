@@ -11,13 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { DashboardLayout, NavItemConfig } from '@/components/layout';
 import {
   Loader2, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
-  Search, ChevronLeft, ChevronRight, Eye, X, Download,
+  Search, ChevronLeft, ChevronRight, Eye, Download,
   BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet,
-  LayoutDashboard, ClipboardList, GraduationCap, List, UserCog
+  LayoutDashboard, ClipboardList, GraduationCap, LogOut
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -25,7 +24,10 @@ import {
   PolarRadiusAxis, Radar, Legend
 } from 'recharts';
 
-// Types
+// ============================================================================
+// TYPES
+// ============================================================================
+
 interface DashboardStats {
   totalAlunos: number;
   totalProvas: number;
@@ -140,7 +142,6 @@ interface StudentResult {
   created_at: string;
 }
 
-// Interfaces para relatório de downloads de listas
 interface ListDownloadAluno {
   studentId: string;
   studentName: string;
@@ -174,7 +175,63 @@ interface ListDownloadData {
   report: ListDownloadReport[];
 }
 
-// Helper functions
+// ============================================================================
+// CONSTANTS - XTRI BRAND COLORS
+// ============================================================================
+
+const XTRI_COLORS = {
+  cyan: '#33B5E5',
+  cyanLight: '#5AC8ED',
+  cyanDark: '#1E9FCC',
+  orange: '#F26A4B',
+  orangeLight: '#F58A70',
+  orangeDark: '#E04E2D',
+  dark: '#1a2744',
+};
+
+const AREA_CONFIG = {
+  LC: {
+    name: 'Linguagens',
+    shortName: 'LC',
+    color: XTRI_COLORS.cyan,
+    gradient: 'from-[#33B5E5] to-[#1E9FCC]',
+    bgLight: 'bg-cyan-50 dark:bg-cyan-950/30',
+    border: 'border-cyan-200 dark:border-cyan-800',
+    text: 'text-cyan-600 dark:text-cyan-400',
+  },
+  CH: {
+    name: 'Humanas',
+    shortName: 'CH',
+    color: XTRI_COLORS.orange,
+    gradient: 'from-[#F26A4B] to-[#E04E2D]',
+    bgLight: 'bg-orange-50 dark:bg-orange-950/30',
+    border: 'border-orange-200 dark:border-orange-800',
+    text: 'text-orange-600 dark:text-orange-400',
+  },
+  CN: {
+    name: 'Natureza',
+    shortName: 'CN',
+    color: '#10b981',
+    gradient: 'from-emerald-500 to-teal-600',
+    bgLight: 'bg-emerald-50 dark:bg-emerald-950/30',
+    border: 'border-emerald-200 dark:border-emerald-800',
+    text: 'text-emerald-600 dark:text-emerald-400',
+  },
+  MT: {
+    name: 'Matemática',
+    shortName: 'MT',
+    color: '#6366f1',
+    gradient: 'from-indigo-500 to-violet-600',
+    bgLight: 'bg-indigo-50 dark:bg-indigo-950/30',
+    border: 'border-indigo-200 dark:border-indigo-800',
+    text: 'text-indigo-600 dark:text-indigo-400',
+  },
+};
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 function getComparacaoIcon(comparacao: string | null) {
   if (comparacao === 'acima') return <TrendingUp className="h-4 w-4 text-green-600" />;
   if (comparacao === 'abaixo') return <TrendingDown className="h-4 w-4 text-red-600" />;
@@ -188,40 +245,251 @@ function getPosicaoEmoji(posicao: number) {
   return posicao.toString();
 }
 
-function getTriFaixaColor(tri: number | null): string {
-  if (tri === null) return 'bg-gray-200';
-  if (tri < 500) return 'bg-red-400';
-  if (tri < 650) return 'bg-yellow-400';
-  return 'bg-green-400';
+// ============================================================================
+// STAT CARD COMPONENT - NexLink Style with XTRI Colors
+// ============================================================================
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  gradient: string;
+  delay?: number;
 }
 
-function getTriFaixaLabel(tri: number | null): string {
-  if (tri === null) return '-';
-  if (tri < 500) return 'Baixo';
-  if (tri < 650) return 'Médio';
-  return 'Alto';
+function StatCard({ title, value, subtitle, icon: Icon, gradient, delay = 0 }: StatCardProps) {
+  return (
+    <div
+      className={`
+        relative overflow-hidden rounded-2xl p-6
+        bg-gradient-to-br ${gradient}
+        shadow-xl shadow-black/10
+        transform hover:scale-[1.02] hover:-translate-y-1
+        transition-all duration-300 ease-out
+      `}
+      style={{
+        animation: `fadeSlideUp 0.5s ease-out ${delay}ms both`,
+      }}
+    >
+      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16" />
+      <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full translate-y-12 -translate-x-12" />
+
+      <div className="relative z-10">
+        <div className="flex items-start justify-between mb-4">
+          <div className="p-3 rounded-xl bg-white/20 backdrop-blur-sm">
+            <Icon className="w-6 h-6 text-white" />
+          </div>
+        </div>
+
+        <p className="text-white/80 text-sm font-medium mb-1">{title}</p>
+        <p className="text-3xl font-bold text-white tracking-tight">{value}</p>
+        {subtitle && (
+          <p className="text-white/60 text-xs mt-1">{subtitle}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// Navigation items for coordinator dashboard
-const getCoordinatorNavItems = (isSuperAdmin: boolean): NavItemConfig[] => {
-  const items: NavItemConfig[] = [
-    { id: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'resultados', label: 'Resultados', icon: ClipboardList },
-    { id: 'turmas', label: 'Turmas', icon: GraduationCap },
-    { id: 'alunos', label: 'Alunos', icon: Users },
-    { id: 'listas', label: 'Listas', icon: List },
+// ============================================================================
+// TURMA CARD COMPONENT - NexLink Style
+// ============================================================================
+
+interface TurmaCardProps {
+  turma: TurmaRanking;
+  index: number;
+  onViewAlunos: () => void;
+  onExportExcel: () => void;
+}
+
+function TurmaCard({ turma, index, onViewAlunos, onExportExcel }: TurmaCardProps) {
+  const gradients = [
+    'from-[#33B5E5] to-[#1E9FCC]',
+    'from-[#F26A4B] to-[#E04E2D]',
+    'from-emerald-500 to-teal-600',
+    'from-indigo-500 to-violet-600',
+    'from-pink-500 to-rose-600',
+    'from-amber-500 to-orange-600',
   ];
-  if (isSuperAdmin) {
-    items.push({ id: 'coordenadores', label: 'Coordenadores', icon: UserCog });
-  }
-  return items;
-};
+  const gradient = gradients[index % gradients.length];
+
+  return (
+    <div
+      className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden"
+      style={{
+        animation: `fadeSlideUp 0.5s ease-out ${index * 100}ms both`,
+      }}
+    >
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
+              <span className="text-white text-sm font-bold">{index + 1}º</span>
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 dark:text-white">{turma.turma || 'Sem turma'}</h3>
+              <p className="text-xs text-gray-500">{turma.alunos} alunos</p>
+            </div>
+          </div>
+          <Badge variant="secondary" className="text-lg font-bold px-3 py-1">
+            {turma.media.toFixed(1)}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {(['LC', 'CH', 'CN', 'MT'] as const).map((area) => {
+            const config = AREA_CONFIG[area];
+            const value = area === 'LC' ? turma.tri_lc
+              : area === 'CH' ? turma.tri_ch
+              : area === 'CN' ? turma.tri_cn
+              : turma.tri_mt;
+
+            return (
+              <div key={area} className={`p-2 rounded-lg ${config.bgLight} text-center`}>
+                <p className={`text-xs font-medium ${config.text}`}>{area}</p>
+                <p className={`text-sm font-bold ${config.text}`}>{value?.toFixed(0) || '-'}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1 border-[#33B5E5] text-[#33B5E5] hover:bg-[#33B5E5] hover:text-white"
+            onClick={onViewAlunos}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            Ver Alunos
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white"
+            onClick={onExportExcel}
+            title="Exportar Excel"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// RANKING CARD COMPONENT
+// ============================================================================
+
+interface RankingCardProps {
+  turmas: TurmaRanking[];
+}
+
+function RankingCard({ turmas }: RankingCardProps) {
+  return (
+    <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center shadow-lg">
+            <Trophy className="w-5 h-5 text-white" />
+          </div>
+          <h3 className="font-bold text-lg text-gray-900 dark:text-white">Ranking por Turma</h3>
+        </div>
+
+        <div className="space-y-4">
+          {turmas.slice(0, 5).map((turma, index) => (
+            <div key={turma.turma || `ranking-${index}`} className="flex items-center gap-3">
+              <span className="w-8 text-lg font-bold text-gray-400">
+                {getPosicaoEmoji(index + 1)}
+              </span>
+              <div className="flex-1">
+                <div className="flex justify-between mb-1">
+                  <span className="font-medium text-gray-900 dark:text-white">{turma.turma || 'Sem turma'}</span>
+                  <span className="text-sm text-gray-500">{turma.media.toFixed(1)} acertos</span>
+                </div>
+                <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC] rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min((turma.media / 90) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <Badge variant="outline" className="text-xs">{turma.alunos}</Badge>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TOP ALUNOS CARD
+// ============================================================================
+
+interface TopAlunosCardProps {
+  alunos: AlunoDestaque[];
+  type: 'top' | 'atencao';
+}
+
+function TopAlunosCard({ alunos, type }: TopAlunosCardProps) {
+  const isTop = type === 'top';
+  const gradient = isTop ? 'from-emerald-500 to-teal-600' : 'from-orange-500 to-red-500';
+  const Icon = isTop ? TrendingUp : AlertTriangle;
+  const title = isTop ? 'Top 5 Alunos' : 'Atenção Necessária';
+  const subtitle = isTop ? 'Melhores desempenhos' : 'Abaixo de 50% de acertos';
+
+  return (
+    <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
+            <Icon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 dark:text-white">{title}</h3>
+            <p className="text-xs text-gray-500">{subtitle}</p>
+          </div>
+        </div>
+
+        {alunos.length === 0 ? (
+          <p className="text-center text-gray-500 py-6">
+            {isTop ? 'Nenhum aluno encontrado' : 'Nenhum aluno nesta faixa'}
+          </p>
+        ) : (
+          <div className="space-y-2 mt-4">
+            {alunos.map((aluno, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  {isTop && <span className="text-lg">{getPosicaoEmoji(index + 1)}</span>}
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{aluno.nome}</p>
+                    <p className="text-xs text-gray-500">{aluno.turma || 'Sem turma'}</p>
+                  </div>
+                </div>
+                <Badge className={isTop ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'}>
+                  {aluno.acertos} acertos
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export default function EscolaPage() {
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const { toast } = useToast();
-  const isSuperAdmin = profile?.role === 'super_admin';
-  const navItems = getCoordinatorNavItems(isSuperAdmin);
 
   // Tab state
   const [activeTab, setActiveTab] = useState('visao-geral');
@@ -398,24 +666,20 @@ export default function EscolaPage() {
     }
   }, [selectedAlunoMatricula, fetchAlunoHistorico]);
 
-  // Extract série number from turma name (e.g., "EM3VA" → "3", "3ª Série A" → "3")
+  // Extract série number from turma name
   const extractSerieNumber = (turma: string | null): string | null => {
     if (!turma) return null;
-    // Pattern 1: EM followed by number (e.g., EM3VA, EM1VB)
     const emPattern = turma.match(/^EM(\d)/i);
     if (emPattern) return emPattern[1];
-    // Pattern 2: Number followed by ª/º Série/Ano
     const seriePattern = turma.match(/^(\d+)[ªº]?\s*[Ss]érie/i);
     if (seriePattern) return seriePattern[1];
     const anoPattern = turma.match(/^(\d+)[ªº]?\s*[Aa]no/i);
     if (anoPattern) return anoPattern[1];
-    // Pattern 3: Just starts with a number
     const numPattern = turma.match(/^(\d)/);
     if (numPattern) return numPattern[1];
     return null;
   };
 
-  // Extract série for display (e.g., "EM3VA" → "3ª Série")
   const extractSerie = (turma: string | null): string => {
     if (!turma) return '';
     const serieNum = extractSerieNumber(turma);
@@ -423,7 +687,6 @@ export default function EscolaPage() {
     return turma;
   };
 
-  // Helper: Check if turma matches allowed series
   const isTurmaAllowed = (turma: string | null): boolean => {
     const allowedSeries = profile?.allowed_series;
     if (!allowedSeries || allowedSeries.length === 0) return true;
@@ -458,12 +721,10 @@ export default function EscolaPage() {
     currentPage * itemsPerPage
   );
 
-  // Helper to filter out null/empty turmas
   const isValidTurma = (turma: string | null): turma is string => {
     return turma !== null && turma !== 'null' && turma.trim() !== '' && turma !== 'Sem turma';
   };
 
-  // Get unique series from results (excluding null/invalid), filtered by allowed series
   const availableSeries = [...new Set(
     results
       .map(r => extractSerie(r.turma))
@@ -471,149 +732,195 @@ export default function EscolaPage() {
       .filter(s => isTurmaAllowed(s))
   )].sort();
 
-  // Get turmas for selected serie (excluding null/invalid), filtered by allowed series
   const availableTurmas = selectedSerie === 'all'
     ? [...new Set(results.map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort()
     : [...new Set(results.filter(r => extractSerie(r.turma) === selectedSerie).map(r => r.turma).filter(isValidTurma).filter(t => isTurmaAllowed(t)))].sort();
 
-  // Handle nav item click - sync with tabs
-  const handleNavClick = (id: string) => {
-    setActiveTab(id);
-  };
-
+  // Loading state
   if (loadingDashboard && !dashboardData) {
     return (
-      <DashboardLayout
-        navItems={navItems}
-        activeNavItem={activeTab}
-        onNavItemClick={handleNavClick}
-      >
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+        <style>{`
+          @keyframes fadeSlideUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}</style>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-xl animate-pulse">
+              <School className="w-8 h-8 text-white" />
+            </div>
+            <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5] mx-auto" />
+            <p className="text-gray-500 mt-2">Carregando dashboard...</p>
+          </div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout
-      navItems={navItems}
-      activeNavItem={activeTab}
-      onNavItemClick={handleNavClick}
-    >
-      {/* Welcome Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Portal da Escola
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 text-sm">
-          {profile?.name} - Coordenador(a)
-          {profile?.allowed_series && profile.allowed_series.length > 0 && (
-            <span className="ml-2 text-primary">
-              ({profile.allowed_series.join(', ')})
-            </span>
-          )}
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <style>{`
+        @keyframes fadeSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
 
-      {/* Content */}
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Total de Alunos</CardDescription>
-              <CardTitle className="text-3xl">
-                <Users className="h-5 w-5 inline mr-2 text-blue-600" />
-                {dashboardData?.stats.totalAlunos || 0}
-              </CardTitle>
-            </CardHeader>
-          </Card>
+      {/* Header Sticky */}
+      <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-sm">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 lg:px-8 py-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <School className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-lg text-gray-900 dark:text-white hidden sm:block">Portal da Escola</span>
+            </div>
+            <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 hidden sm:block" />
+            <div className="hidden sm:block">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">{profile?.name}</p>
+              <p className="text-xs text-gray-500">
+                Coordenador(a)
+                {profile?.allowed_series && profile.allowed_series.length > 0 && (
+                  <span className="ml-1 text-[#33B5E5]">
+                    ({profile.allowed_series.join(', ')})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Provas Realizadas</CardDescription>
-              <CardTitle className="text-3xl">
-                <FileText className="h-5 w-5 inline mr-2 text-green-600" />
-                {dashboardData?.stats.totalProvas || 0}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Média de Acertos</CardDescription>
-              <CardTitle className="text-3xl">
-                <BarChart2 className="h-5 w-5 inline mr-2 text-purple-600" />
-                {dashboardData?.stats.mediaAcertos?.toFixed(1) || '-'}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Turmas / Séries</CardDescription>
-              <CardTitle className="text-3xl">
-                {dashboardData?.stats.totalTurmas || 0} / {dashboardData?.stats.totalSeries || 0}
-              </CardTitle>
-            </CardHeader>
-          </Card>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="border-[#33B5E5] text-[#33B5E5] hidden md:flex">
+              <GraduationCap className="w-3 h-3 mr-1" />
+              {dashboardData?.stats.totalTurmas || 0} turmas
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="text-gray-500 hover:text-red-500 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
         </div>
+        {/* Gradient bar */}
+        <div className="h-1 bg-gradient-to-r from-[#33B5E5] via-[#F26A4B] to-[#33B5E5]" />
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8">
+        {/* Stat Cards */}
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard
+            title="Total de Alunos"
+            value={dashboardData?.stats.totalAlunos || 0}
+            subtitle="Alunos cadastrados"
+            icon={Users}
+            gradient="from-[#33B5E5] to-[#1E9FCC]"
+            delay={0}
+          />
+          <StatCard
+            title="Provas Realizadas"
+            value={dashboardData?.stats.totalProvas || 0}
+            subtitle="Simulados aplicados"
+            icon={FileText}
+            gradient="from-emerald-500 to-teal-600"
+            delay={100}
+          />
+          <StatCard
+            title="Média de Acertos"
+            value={dashboardData?.stats.mediaAcertos?.toFixed(1) || '-'}
+            subtitle="Média geral"
+            icon={BarChart2}
+            gradient="from-indigo-500 to-violet-600"
+            delay={200}
+          />
+          <StatCard
+            title="Turmas / Séries"
+            value={`${dashboardData?.stats.totalTurmas || 0} / ${dashboardData?.stats.totalSeries || 0}`}
+            subtitle="Organização escolar"
+            icon={School}
+            gradient="from-[#F26A4B] to-[#E04E2D]"
+            delay={300}
+          />
+        </section>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
-            <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
-            <TabsTrigger value="resultados">Resultados</TabsTrigger>
-            <TabsTrigger value="turmas">Turmas</TabsTrigger>
-            <TabsTrigger value="alunos">Alunos</TabsTrigger>
-            <TabsTrigger value="listas">Listas</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="bg-gray-100 dark:bg-gray-800 p-1.5 rounded-xl inline-flex">
+            <TabsTrigger
+              value="visao-geral"
+              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
+            >
+              <LayoutDashboard className="w-4 h-4 mr-2" />
+              Visão Geral
+            </TabsTrigger>
+            <TabsTrigger
+              value="resultados"
+              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
+            >
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Resultados
+            </TabsTrigger>
+            <TabsTrigger
+              value="turmas"
+              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
+            >
+              <GraduationCap className="w-4 h-4 mr-2" />
+              Turmas
+            </TabsTrigger>
+            <TabsTrigger
+              value="alunos"
+              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Alunos
+            </TabsTrigger>
+            <TabsTrigger
+              value="listas"
+              className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-[#33B5E5] data-[state=active]:shadow-sm rounded-lg px-4 py-2 transition-all"
+            >
+              <BookOpen className="w-4 h-4 mr-2" />
+              Listas
+            </TabsTrigger>
           </TabsList>
 
           {/* TAB: Visão Geral */}
           <TabsContent value="visao-geral" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Ranking de Turmas */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-yellow-500" />
-                    Ranking por Turma
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {dashboardData?.turmaRanking.map((turma, index) => (
-                    <div key={turma.turma || `ranking-${index}`} className="flex items-center gap-3">
-                      <span className="w-8 text-lg font-bold text-gray-500">
-                        {index + 1}º
-                      </span>
-                      <div className="flex-1">
-                        <div className="flex justify-between mb-1">
-                          <span className="font-medium">{turma.turma || 'Sem turma'}</span>
-                          <span className="text-sm text-gray-500">
-                            {turma.media.toFixed(1)} acertos
-                          </span>
-                        </div>
-                        <Progress
-                          value={(turma.media / 90) * 100}
-                          className="h-2"
-                        />
-                      </div>
-                      <Badge variant="outline">{turma.alunos} alunos</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+              <RankingCard turmas={dashboardData?.turmaRanking || []} />
 
-              {/* Gráfico de Barras - TRI por Área */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart2 className="h-5 w-5 text-blue-500" />
-                    TRI Médio por Área
-                  </CardTitle>
-                  <CardDescription>Desempenho médio em cada área do conhecimento</CardDescription>
-                </CardHeader>
-                <CardContent>
+              {/* Gráfico TRI por Área */}
+              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
+                      <BarChart2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">TRI Médio por Área</h3>
+                      <p className="text-xs text-gray-500">Desempenho médio por área do conhecimento</p>
+                    </div>
+                  </div>
+
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart
                       data={[
@@ -628,32 +935,32 @@ export default function EscolaPage() {
                       <YAxis domain={[0, 1000]} tick={{ fontSize: 11 }} />
                       <RechartsTooltip
                         formatter={(value: number, name, props) => [`${value.toFixed(0)}`, props.payload.label]}
-                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
                       />
-                      <Bar dataKey="value" name="TRI" radius={[4, 4, 0, 0]}>
-                        <Cell fill="#3b82f6" />
+                      <Bar dataKey="value" name="TRI" radius={[8, 8, 0, 0]}>
+                        <Cell fill={XTRI_COLORS.cyan} />
+                        <Cell fill={XTRI_COLORS.orange} />
                         <Cell fill="#10b981" />
-                        <Cell fill="#8b5cf6" />
-                        <Cell fill="#f97316" />
+                        <Cell fill="#6366f1" />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <p className="text-xs text-gray-500 mt-2 text-center">
-                    Escala TRI: Baixo (&lt;500) | Médio (500-650) | Alto (&gt;650)
-                  </p>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              {/* Gráfico Radar - TRI por Área */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart2 className="h-5 w-5 text-purple-500" />
-                    Radar: Perfil de Desempenho
-                  </CardTitle>
-                  <CardDescription>Visualização comparativa das áreas</CardDescription>
-                </CardHeader>
-                <CardContent>
+              {/* Radar Chart */}
+              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
+                      <BarChart2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">Perfil de Desempenho</h3>
+                      <p className="text-xs text-gray-500">Visualização comparativa das áreas</p>
+                    </div>
+                  </div>
+
                   <ResponsiveContainer width="100%" height={280}>
                     <RadarChart
                       data={[
@@ -669,29 +976,32 @@ export default function EscolaPage() {
                       <Radar
                         name="TRI"
                         dataKey="value"
-                        stroke="#8b5cf6"
-                        fill="#8b5cf6"
-                        fillOpacity={0.5}
+                        stroke={XTRI_COLORS.cyan}
+                        fill={XTRI_COLORS.cyan}
+                        fillOpacity={0.4}
                       />
                       <RechartsTooltip
                         formatter={(value: number) => [`${value.toFixed(0)}`, 'TRI Médio']}
-                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
                       />
                     </RadarChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              {/* Gráfico de Barras - TRI por Turma */}
-              <Card className="md:col-span-2">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart2 className="h-5 w-5 text-green-500" />
-                    TRI Médio por Turma
-                  </CardTitle>
-                  <CardDescription>Comparativo de desempenho TRI entre as turmas</CardDescription>
-                </CardHeader>
-                <CardContent>
+              {/* TRI por Turma */}
+              <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden lg:col-span-2">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+                      <BarChart2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">TRI Médio por Turma</h3>
+                      <p className="text-xs text-gray-500">Comparativo de desempenho entre turmas</p>
+                    </div>
+                  </div>
+
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart
                       data={dashboardData?.turmaRanking.map(t => ({
@@ -700,7 +1010,6 @@ export default function EscolaPage() {
                         ch: t.tri_ch || 0,
                         cn: t.tri_cn || 0,
                         mt: t.tri_mt || 0,
-                        media: ((t.tri_lc || 0) + (t.tri_ch || 0) + (t.tri_cn || 0) + (t.tri_mt || 0)) / 4,
                       })) || []}
                       layout="vertical"
                     >
@@ -709,94 +1018,38 @@ export default function EscolaPage() {
                       <YAxis dataKey="turma" type="category" tick={{ fontSize: 11 }} width={80} />
                       <RechartsTooltip
                         formatter={(value: number, name) => [`${value.toFixed(0)}`, name]}
-                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                        contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px' }}
                       />
                       <Legend />
-                      <Bar dataKey="lc" name="LC" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="ch" name="CH" fill="#10b981" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="cn" name="CN" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="mt" name="MT" fill="#f97316" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="lc" name="LC" fill={XTRI_COLORS.cyan} radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="ch" name="CH" fill={XTRI_COLORS.orange} radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="cn" name="CN" fill="#10b981" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="mt" name="MT" fill="#6366f1" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
               {/* Top 5 Alunos */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-green-600">
-                    <TrendingUp className="h-5 w-5" />
-                    Top 5 Alunos
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {dashboardData?.topAlunos.map((aluno, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg">{getPosicaoEmoji(index + 1)}</span>
-                          <div>
-                            <p className="font-medium">{aluno.nome}</p>
-                            <p className="text-xs text-gray-500">{aluno.turma || 'Sem turma'}</p>
-                          </div>
-                        </div>
-                        <Badge className="bg-green-100 text-green-800">
-                          {aluno.acertos} acertos
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <TopAlunosCard alunos={dashboardData?.topAlunos || []} type="top" />
 
-              {/* Alunos que precisam de atenção */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-orange-600">
-                    <AlertTriangle className="h-5 w-5" />
-                    Atenção Necessária
-                  </CardTitle>
-                  <CardDescription>Alunos abaixo de 50% de acertos</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {dashboardData?.atencao.length === 0 ? (
-                    <p className="text-center text-gray-500 py-4">
-                      Nenhum aluno nesta faixa
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {dashboardData?.atencao.map((aluno, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                          <div>
-                            <p className="font-medium">{aluno.nome}</p>
-                            <p className="text-xs text-gray-500">{aluno.turma || 'Sem turma'}</p>
-                          </div>
-                          <Badge variant="destructive">
-                            {aluno.acertos} acertos
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              {/* Alunos Atenção */}
+              <TopAlunosCard alunos={dashboardData?.atencao || []} type="atencao" />
             </div>
           </TabsContent>
 
           {/* TAB: Resultados */}
           <TabsContent value="resultados">
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+              <div className="p-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                   <div>
-                    <CardTitle>Resultados dos Alunos</CardTitle>
-                    <CardDescription>
-                      {filteredResults.length} resultado(s) encontrado(s)
-                    </CardDescription>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Resultados dos Alunos</h2>
+                    <p className="text-sm text-gray-500">{filteredResults.length} resultado(s) encontrado(s)</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Select value={selectedSerie} onValueChange={(v) => { setSelectedSerie(v); setSelectedTurma('all'); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-40 border-[#33B5E5]/30 focus:ring-[#33B5E5]">
                         <SelectValue placeholder="Série" />
                       </SelectTrigger>
                       <SelectContent>
@@ -807,7 +1060,7 @@ export default function EscolaPage() {
                       </SelectContent>
                     </Select>
                     <Select value={selectedTurma} onValueChange={(v) => { setSelectedTurma(v); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-40 border-[#33B5E5]/30 focus:ring-[#33B5E5]">
                         <SelectValue placeholder="Turma" />
                       </SelectTrigger>
                       <SelectContent>
@@ -819,22 +1072,19 @@ export default function EscolaPage() {
                     </Select>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+
                 {loadingResults ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin" />
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
                   </div>
                 ) : filteredResults.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">
-                    Nenhum resultado encontrado
-                  </p>
+                  <p className="text-center text-gray-500 py-12">Nenhum resultado encontrado</p>
                 ) : (
                   <>
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow>
+                          <TableRow className="bg-gray-50 dark:bg-gray-800">
                             <TableHead>Aluno</TableHead>
                             <TableHead>Matrícula</TableHead>
                             <TableHead>Turma</TableHead>
@@ -848,50 +1098,36 @@ export default function EscolaPage() {
                         </TableHeader>
                         <TableBody>
                           {paginatedResults.map((result) => (
-                            <TableRow key={result.id}>
-                              <TableCell className="font-medium">
-                                {result.student_name}
-                              </TableCell>
+                            <TableRow key={result.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                              <TableCell className="font-medium">{result.student_name}</TableCell>
                               <TableCell>{result.student_number || '-'}</TableCell>
                               <TableCell>
-                                <Badge variant="outline">
+                                <Badge variant="outline" className="border-[#33B5E5]/30">
                                   {result.turma && result.turma !== 'null' ? result.turma : 'Sem turma'}
                                 </Badge>
                               </TableCell>
                               <TableCell>{result.exam_title}</TableCell>
-                              <TableCell className="text-center font-medium">
-                                {result.correct_answers ?? '-'}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {result.tri_lc?.toFixed(0) || '-'}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {result.tri_ch?.toFixed(0) || '-'}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {result.tri_cn?.toFixed(0) || '-'}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {result.tri_mt?.toFixed(0) || '-'}
-                              </TableCell>
+                              <TableCell className="text-center font-bold">{result.correct_answers ?? '-'}</TableCell>
+                              <TableCell className="text-center text-cyan-600">{result.tri_lc?.toFixed(0) || '-'}</TableCell>
+                              <TableCell className="text-center text-orange-600">{result.tri_ch?.toFixed(0) || '-'}</TableCell>
+                              <TableCell className="text-center text-emerald-600">{result.tri_cn?.toFixed(0) || '-'}</TableCell>
+                              <TableCell className="text-center text-indigo-600">{result.tri_mt?.toFixed(0) || '-'}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </div>
 
-                    {/* Pagination */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-4">
-                        <p className="text-sm text-gray-500">
-                          Página {currentPage} de {totalPages}
-                        </p>
+                      <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                        <p className="text-sm text-gray-500">Página {currentPage} de {totalPages}</p>
                         <div className="flex gap-2">
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={currentPage === 1}
                             onClick={() => setCurrentPage(p => p - 1)}
+                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </Button>
@@ -900,6 +1136,7 @@ export default function EscolaPage() {
                             size="sm"
                             disabled={currentPage === totalPages}
                             onClick={() => setCurrentPage(p => p + 1)}
+                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
                           >
                             <ChevronRight className="h-4 w-4" />
                           </Button>
@@ -908,80 +1145,33 @@ export default function EscolaPage() {
                     )}
                   </>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </TabsContent>
 
           {/* TAB: Turmas */}
           <TabsContent value="turmas">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {dashboardData?.turmaRanking
                 .filter(turma => isTurmaAllowed(turma.turma))
                 .map((turma, index) => (
-                <Card key={turma.turma || `turma-${index}`}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{turma.turma || 'Sem turma'}</CardTitle>
-                      <Badge variant="secondary">{turma.alunos} alunos</Badge>
-                    </div>
-                    <CardDescription>
-                      Posição: {index + 1}º no ranking
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="text-2xl font-bold">
-                      Média: {turma.media.toFixed(1)} acertos
-                    </div>
-                    <div className="grid grid-cols-4 gap-2 text-xs text-center">
-                      <div>
-                        <p className="text-gray-500">LC</p>
-                        <p className="font-medium">{turma.tri_lc?.toFixed(0) || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">CH</p>
-                        <p className="font-medium">{turma.tri_ch?.toFixed(0) || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">CN</p>
-                        <p className="font-medium">{turma.tri_cn?.toFixed(0) || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">MT</p>
-                        <p className="font-medium">{turma.tri_mt?.toFixed(0) || '-'}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => setSelectedTurmaModal(turma.turma)}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Ver Alunos
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          window.open(`/api/escola/turmas/${encodeURIComponent(turma.turma)}/export-excel`, '_blank');
-                        }}
-                        title="Exportar para Excel"
-                      >
-                        <FileSpreadsheet className="h-4 w-4 text-green-600" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  <TurmaCard
+                    key={turma.turma || `turma-${index}`}
+                    turma={turma}
+                    index={index}
+                    onViewAlunos={() => setSelectedTurmaModal(turma.turma)}
+                    onExportExcel={() => downloadTurmaExcel(turma.turma)}
+                  />
+                ))}
             </div>
           </TabsContent>
 
           {/* TAB: Alunos */}
           <TabsContent value="alunos">
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <CardTitle>Lista de Alunos</CardTitle>
+            <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+              <div className="p-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Lista de Alunos</h2>
                   <div className="flex flex-wrap gap-2">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -989,11 +1179,11 @@ export default function EscolaPage() {
                         placeholder="Buscar por nome ou matrícula..."
                         value={searchTerm}
                         onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                        className="pl-10 w-64"
+                        className="pl-10 w-64 border-[#33B5E5]/30 focus:ring-[#33B5E5]"
                       />
                     </div>
                     <Select value={selectedSerie} onValueChange={(v) => { setSelectedSerie(v); setSelectedTurma('all'); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-40 border-[#33B5E5]/30">
                         <SelectValue placeholder="Série" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1004,7 +1194,7 @@ export default function EscolaPage() {
                       </SelectContent>
                     </Select>
                     <Select value={selectedTurma} onValueChange={(v) => { setSelectedTurma(v); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-40 border-[#33B5E5]/30">
                         <SelectValue placeholder="Turma" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1016,6 +1206,7 @@ export default function EscolaPage() {
                     </Select>
                     <Button
                       variant="outline"
+                      className="border-[#33B5E5] text-[#33B5E5] hover:bg-[#33B5E5] hover:text-white"
                       onClick={() => {
                         const params = new URLSearchParams();
                         if (selectedTurma && selectedTurma !== 'all') params.set('turma', selectedTurma);
@@ -1027,18 +1218,17 @@ export default function EscolaPage() {
                     </Button>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+
                 {loadingResults ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin" />
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
                   </div>
                 ) : (
                   <>
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow>
+                          <TableRow className="bg-gray-50 dark:bg-gray-800">
                             <TableHead>Aluno</TableHead>
                             <TableHead>Matrícula</TableHead>
                             <TableHead>Turma</TableHead>
@@ -1048,25 +1238,22 @@ export default function EscolaPage() {
                         </TableHeader>
                         <TableBody>
                           {paginatedResults.map((result) => (
-                            <TableRow key={result.id}>
-                              <TableCell className="font-medium">
-                                {result.student_name}
-                              </TableCell>
+                            <TableRow key={result.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                              <TableCell className="font-medium">{result.student_name}</TableCell>
                               <TableCell>{result.student_number || '-'}</TableCell>
                               <TableCell>
-                                <Badge variant="outline">
+                                <Badge variant="outline" className="border-[#33B5E5]/30">
                                   {result.turma && result.turma !== 'null' ? result.turma : 'Sem turma'}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-center font-medium">
-                                {result.correct_answers ?? '-'}
-                              </TableCell>
+                              <TableCell className="text-center font-bold">{result.correct_answers ?? '-'}</TableCell>
                               <TableCell className="text-center">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => result.student_number && setSelectedAlunoMatricula(result.student_number)}
                                   disabled={!result.student_number}
+                                  className="text-[#33B5E5] hover:bg-[#33B5E5]/10"
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
@@ -1077,18 +1264,16 @@ export default function EscolaPage() {
                       </Table>
                     </div>
 
-                    {/* Pagination */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-4">
-                        <p className="text-sm text-gray-500">
-                          Página {currentPage} de {totalPages}
-                        </p>
+                      <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                        <p className="text-sm text-gray-500">Página {currentPage} de {totalPages}</p>
                         <div className="flex gap-2">
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={currentPage === 1}
                             onClick={() => setCurrentPage(p => p - 1)}
+                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </Button>
@@ -1097,6 +1282,7 @@ export default function EscolaPage() {
                             size="sm"
                             disabled={currentPage === totalPages}
                             onClick={() => setCurrentPage(p => p + 1)}
+                            className="border-[#33B5E5]/30 hover:bg-[#33B5E5] hover:text-white"
                           >
                             <ChevronRight className="h-4 w-4" />
                           </Button>
@@ -1105,25 +1291,26 @@ export default function EscolaPage() {
                     )}
                   </>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </TabsContent>
 
-          {/* TAB: Listas de Exercícios */}
-          <TabsContent value="listas" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-blue-500" />
-                  Relatório de Downloads de Listas
-                </CardTitle>
-                <CardDescription>
-                  Acompanhe quais alunos baixaram as listas de exercícios recomendadas
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+          {/* TAB: Listas */}
+          <TabsContent value="listas" className="space-y-6">
+            <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center shadow-lg">
+                    <BookOpen className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">Relatório de Downloads de Listas</h3>
+                    <p className="text-xs text-gray-500">Acompanhe quais alunos baixaram as listas de exercícios</p>
+                  </div>
+                </div>
+
                 {/* Filtros */}
-                <div className="flex flex-wrap gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="flex flex-wrap gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
                   <div className="flex items-center gap-2">
                     <Filter className="h-4 w-4 text-gray-500" />
                     <span className="text-sm font-medium">Filtros:</span>
@@ -1132,7 +1319,7 @@ export default function EscolaPage() {
                     value={listDownloadFilters.turma}
                     onValueChange={(value) => setListDownloadFilters(f => ({ ...f, turma: value }))}
                   >
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger className="w-40 border-[#33B5E5]/30">
                       <SelectValue placeholder="Turma" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1146,7 +1333,7 @@ export default function EscolaPage() {
                     value={listDownloadFilters.area}
                     onValueChange={(value) => setListDownloadFilters(f => ({ ...f, area: value }))}
                   >
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger className="w-40 border-[#33B5E5]/30">
                       <SelectValue placeholder="Área" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1161,6 +1348,7 @@ export default function EscolaPage() {
                     variant={listDownloadFilters.onlyMissing ? "default" : "outline"}
                     size="sm"
                     onClick={() => setListDownloadFilters(f => ({ ...f, onlyMissing: !f.onlyMissing }))}
+                    className={listDownloadFilters.onlyMissing ? 'bg-[#F26A4B] hover:bg-[#E04E2D]' : 'border-[#F26A4B] text-[#F26A4B] hover:bg-[#F26A4B] hover:text-white'}
                   >
                     <XCircle className="h-4 w-4 mr-1" />
                     Só quem não baixou
@@ -1169,143 +1357,140 @@ export default function EscolaPage() {
 
                 {loadingListDownloads ? (
                   <div className="flex justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                    <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
                   </div>
                 ) : listDownloadsData ? (
                   <>
                     {/* Resumo */}
                     <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{listDownloadsData.summary.totalListas}</div>
-                        <div className="text-sm text-muted-foreground">Listas Disponíveis</div>
+                      <div className="text-center p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-xl border border-cyan-200 dark:border-cyan-800">
+                        <div className="text-2xl font-bold text-cyan-600">{listDownloadsData.summary.totalListas}</div>
+                        <div className="text-sm text-gray-500">Listas Disponíveis</div>
                       </div>
-                      <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{listDownloadsData.summary.totalAlunos}</div>
-                        <div className="text-sm text-muted-foreground">Alunos</div>
+                      <div className="text-center p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                        <div className="text-2xl font-bold text-emerald-600">{listDownloadsData.summary.totalAlunos}</div>
+                        <div className="text-sm text-gray-500">Alunos</div>
                       </div>
-                      <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">{listDownloadsData.summary.mediaDownloads}%</div>
-                        <div className="text-sm text-muted-foreground">Média de Downloads</div>
+                      <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                        <div className="text-2xl font-bold text-indigo-600">{listDownloadsData.summary.mediaDownloads}%</div>
+                        <div className="text-sm text-gray-500">Média de Downloads</div>
                       </div>
                     </div>
 
-                    {/* Lista de listas com relatório */}
+                    {/* Lista de listas */}
                     <div className="space-y-3">
-                      {listDownloadsData.report.map((list) => (
-                        <div key={list.listId} className="border rounded-lg overflow-hidden">
-                          {/* Header da lista (clicável) */}
-                          <div
-                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-                            onClick={() => setExpandedListId(expandedListId === list.listId ? null : list.listId)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Badge variant="outline" className={
-                                list.area === 'LC' ? 'border-blue-500 text-blue-500' :
-                                list.area === 'CH' ? 'border-yellow-500 text-yellow-500' :
-                                list.area === 'CN' ? 'border-green-500 text-green-500' :
-                                'border-red-500 text-red-500'
-                              }>
-                                {list.area}
-                              </Badge>
-                              <div>
-                                <div className="font-medium">{list.listTitle}</div>
-                                <div className="text-xs text-muted-foreground">TRI {list.triMin}-{list.triMax}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-lg font-bold ${
-                                    list.percentDownloaded >= 70 ? 'text-green-600' :
-                                    list.percentDownloaded >= 40 ? 'text-yellow-600' :
-                                    'text-red-600'
-                                  }`}>
-                                    {list.percentDownloaded}%
-                                  </span>
-                                  <Progress value={list.percentDownloaded} className="w-24 h-2" />
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {list.totalDownloads}/{list.totalAlunos} alunos
+                      {listDownloadsData.report.map((list) => {
+                        const areaConfig = AREA_CONFIG[list.area as keyof typeof AREA_CONFIG] || AREA_CONFIG.LC;
+                        return (
+                          <div key={list.listId} className="border-2 border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden">
+                            <div
+                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                              onClick={() => setExpandedListId(expandedListId === list.listId ? null : list.listId)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Badge variant="outline" className={`${areaConfig.border} ${areaConfig.text}`}>
+                                  {list.area}
+                                </Badge>
+                                <div>
+                                  <div className="font-medium text-gray-900 dark:text-white">{list.listTitle}</div>
+                                  <div className="text-xs text-gray-500">TRI {list.triMin}-{list.triMax}</div>
                                 </div>
                               </div>
-                              <ChevronRight className={`h-5 w-5 transition-transform ${expandedListId === list.listId ? 'rotate-90' : ''}`} />
+                              <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-lg font-bold ${
+                                      list.percentDownloaded >= 70 ? 'text-emerald-600' :
+                                      list.percentDownloaded >= 40 ? 'text-amber-600' :
+                                      'text-red-600'
+                                    }`}>
+                                      {list.percentDownloaded}%
+                                    </span>
+                                    <Progress value={list.percentDownloaded} className="w-24 h-2" />
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {list.totalDownloads}/{list.totalAlunos} alunos
+                                  </div>
+                                </div>
+                                <ChevronRight className={`h-5 w-5 text-gray-400 transition-transform ${expandedListId === list.listId ? 'rotate-90' : ''}`} />
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Detalhes dos alunos (expandido) */}
-                          {expandedListId === list.listId && (
-                            <div className="border-t bg-gray-50 dark:bg-gray-800/50 p-4">
-                              {list.alunos.length === 0 ? (
-                                <p className="text-center text-muted-foreground py-4">
-                                  {listDownloadFilters.onlyMissing
-                                    ? 'Todos os alunos já baixaram esta lista!'
-                                    : 'Nenhum aluno encontrado'}
-                                </p>
-                              ) : (
-                                <div className="max-h-64 overflow-y-auto">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Aluno</TableHead>
-                                        <TableHead>Matrícula</TableHead>
-                                        <TableHead>Turma</TableHead>
-                                        <TableHead>Data do Download</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {list.alunos.map((aluno) => (
-                                        <TableRow key={aluno.studentId}>
-                                          <TableCell>
-                                            {aluno.downloaded ? (
-                                              <CheckCircle2 className="h-5 w-5 text-green-500" />
-                                            ) : (
-                                              <XCircle className="h-5 w-5 text-red-500" />
-                                            )}
-                                          </TableCell>
-                                          <TableCell className="font-medium">{aluno.studentName}</TableCell>
-                                          <TableCell>{aluno.studentNumber || '-'}</TableCell>
-                                          <TableCell>{aluno.turma || '-'}</TableCell>
-                                          <TableCell>
-                                            {aluno.downloadedAt
-                                              ? new Date(aluno.downloadedAt).toLocaleDateString('pt-BR', {
-                                                  day: '2-digit',
-                                                  month: '2-digit',
-                                                  year: 'numeric',
-                                                  hour: '2-digit',
-                                                  minute: '2-digit',
-                                                })
-                                              : '-'}
-                                          </TableCell>
+                            {expandedListId === list.listId && (
+                              <div className="border-t bg-gray-50 dark:bg-gray-800/50 p-4">
+                                {list.alunos.length === 0 ? (
+                                  <p className="text-center text-gray-500 py-4">
+                                    {listDownloadFilters.onlyMissing
+                                      ? 'Todos os alunos já baixaram esta lista!'
+                                      : 'Nenhum aluno encontrado'}
+                                  </p>
+                                ) : (
+                                  <div className="max-h-64 overflow-y-auto">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Status</TableHead>
+                                          <TableHead>Aluno</TableHead>
+                                          <TableHead>Matrícula</TableHead>
+                                          <TableHead>Turma</TableHead>
+                                          <TableHead>Data do Download</TableHead>
                                         </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                                      </TableHeader>
+                                      <TableBody>
+                                        {list.alunos.map((aluno) => (
+                                          <TableRow key={aluno.studentId}>
+                                            <TableCell>
+                                              {aluno.downloaded ? (
+                                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                              ) : (
+                                                <XCircle className="h-5 w-5 text-red-500" />
+                                              )}
+                                            </TableCell>
+                                            <TableCell className="font-medium">{aluno.studentName}</TableCell>
+                                            <TableCell>{aluno.studentNumber || '-'}</TableCell>
+                                            <TableCell>{aluno.turma || '-'}</TableCell>
+                                            <TableCell>
+                                              {aluno.downloadedAt
+                                                ? new Date(aluno.downloadedAt).toLocaleDateString('pt-BR', {
+                                                    day: '2-digit',
+                                                    month: '2-digit',
+                                                    year: 'numeric',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit',
+                                                  })
+                                                : '-'}
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {listDownloadsData.report.length === 0 && (
-                      <div className="text-center py-12 text-muted-foreground">
-                        <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>Nenhuma lista encontrada com os filtros selecionados</p>
+                      <div className="text-center py-12">
+                        <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p className="text-gray-500">Nenhuma lista encontrada com os filtros selecionados</p>
                       </div>
                     )}
                   </>
                 ) : (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Selecione filtros para ver o relatório</p>
+                  <div className="text-center py-12">
+                    <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p className="text-gray-500">Selecione filtros para ver o relatório</p>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
+      </main>
 
       {/* Modal: Ver Alunos da Turma */}
       <Dialog open={!!selectedTurmaModal} onOpenChange={(open) => !open && setSelectedTurmaModal(null)}>
@@ -1313,9 +1498,14 @@ export default function EscolaPage() {
           <DialogHeader>
             <div className="flex items-center justify-between">
               <div>
-                <DialogTitle>{turmaAlunosData?.turma} - {turmaAlunosData?.totalAlunos} alunos</DialogTitle>
-                <DialogDescription>
-                  Média da turma: {turmaAlunosData?.mediaTurma.acertos.toFixed(1)} acertos |
+                <DialogTitle className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center">
+                    <GraduationCap className="w-4 h-4 text-white" />
+                  </div>
+                  {turmaAlunosData?.turma} - {turmaAlunosData?.totalAlunos} alunos
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  Média: {turmaAlunosData?.mediaTurma.acertos.toFixed(1)} acertos |
                   LC: {turmaAlunosData?.mediaTurma.lc?.toFixed(0) || '-'} |
                   CH: {turmaAlunosData?.mediaTurma.ch?.toFixed(0) || '-'} |
                   CN: {turmaAlunosData?.mediaTurma.cn?.toFixed(0) || '-'} |
@@ -1325,7 +1515,7 @@ export default function EscolaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                className="border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white"
                 onClick={() => downloadTurmaExcel(selectedTurmaModal || '')}
               >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
@@ -1335,14 +1525,14 @@ export default function EscolaPage() {
           </DialogHeader>
 
           {loadingTurmaAlunos ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
             </div>
           ) : (
             <div className="flex-1 overflow-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-gray-50 dark:bg-gray-800">
                     <TableHead className="w-12">#</TableHead>
                     <TableHead>Aluno</TableHead>
                     <TableHead>Matrícula</TableHead>
@@ -1355,7 +1545,7 @@ export default function EscolaPage() {
                 </TableHeader>
                 <TableBody>
                   {turmaAlunosData?.alunos.map((aluno) => (
-                    <TableRow key={aluno.matricula || aluno.nome}>
+                    <TableRow key={aluno.matricula || aluno.nome} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                       <TableCell className="font-bold text-lg">
                         {getPosicaoEmoji(aluno.posicao)}
                       </TableCell>
@@ -1366,13 +1556,11 @@ export default function EscolaPage() {
                         </div>
                       </TableCell>
                       <TableCell>{aluno.matricula || '-'}</TableCell>
-                      <TableCell className="text-center font-medium">
-                        {aluno.acertos ?? '-'}
-                      </TableCell>
-                      <TableCell className="text-center">{aluno.tri_lc?.toFixed(0) || '-'}</TableCell>
-                      <TableCell className="text-center">{aluno.tri_ch?.toFixed(0) || '-'}</TableCell>
-                      <TableCell className="text-center">{aluno.tri_cn?.toFixed(0) || '-'}</TableCell>
-                      <TableCell className="text-center">{aluno.tri_mt?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center font-bold">{aluno.acertos ?? '-'}</TableCell>
+                      <TableCell className="text-center text-cyan-600">{aluno.tri_lc?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center text-orange-600">{aluno.tri_ch?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center text-emerald-600">{aluno.tri_cn?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-center text-indigo-600">{aluno.tri_mt?.toFixed(0) || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1380,10 +1568,10 @@ export default function EscolaPage() {
             </div>
           )}
 
-          <div className="pt-4 border-t text-xs text-gray-500">
-            Legenda: <TrendingUp className="h-3 w-3 inline text-green-600" /> Acima da média |
-            <Minus className="h-3 w-3 inline text-gray-400 mx-1" /> Na média |
-            <TrendingDown className="h-3 w-3 inline text-red-600" /> Abaixo da média
+          <div className="pt-4 border-t text-xs text-gray-500 flex items-center gap-4">
+            <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-600" /> Acima da média</span>
+            <span className="flex items-center gap-1"><Minus className="h-3 w-3 text-gray-400" /> Na média</span>
+            <span className="flex items-center gap-1"><TrendingDown className="h-3 w-3 text-red-600" /> Abaixo da média</span>
           </div>
         </DialogContent>
       </Dialog>
@@ -1392,7 +1580,12 @@ export default function EscolaPage() {
       <Dialog open={!!selectedAlunoMatricula} onOpenChange={(open) => !open && setSelectedAlunoMatricula(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>{alunoHistorico?.aluno.nome}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center">
+                <Users className="w-4 h-4 text-white" />
+              </div>
+              {alunoHistorico?.aluno.nome}
+            </DialogTitle>
             <DialogDescription>
               Matrícula: {alunoHistorico?.aluno.matricula} |
               Turma: {alunoHistorico?.aluno.turma} |
@@ -1401,36 +1594,34 @@ export default function EscolaPage() {
           </DialogHeader>
 
           {loadingAlunoHistorico ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
             </div>
           ) : alunoHistorico && (
             <div className="flex-1 overflow-auto space-y-6">
               {/* Comparativo com Turma */}
-              <div>
-                <h4 className="font-medium mb-3">Desempenho vs Turma</h4>
-                <div className="space-y-2">
+              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                <h4 className="font-bold mb-4 text-gray-900 dark:text-white">Desempenho vs Turma</h4>
+                <div className="space-y-3">
                   {[
-                    { label: 'LC', aluno: alunoHistorico.ultimoResultado.tri_lc, turma: alunoHistorico.mediaTurma.lc },
-                    { label: 'CH', aluno: alunoHistorico.ultimoResultado.tri_ch, turma: alunoHistorico.mediaTurma.ch },
-                    { label: 'CN', aluno: alunoHistorico.ultimoResultado.tri_cn, turma: alunoHistorico.mediaTurma.cn },
-                    { label: 'MT', aluno: alunoHistorico.ultimoResultado.tri_mt, turma: alunoHistorico.mediaTurma.mt },
+                    { label: 'LC', aluno: alunoHistorico.ultimoResultado.tri_lc, turma: alunoHistorico.mediaTurma.lc, color: 'bg-cyan-500' },
+                    { label: 'CH', aluno: alunoHistorico.ultimoResultado.tri_ch, turma: alunoHistorico.mediaTurma.ch, color: 'bg-orange-500' },
+                    { label: 'CN', aluno: alunoHistorico.ultimoResultado.tri_cn, turma: alunoHistorico.mediaTurma.cn, color: 'bg-emerald-500' },
+                    { label: 'MT', aluno: alunoHistorico.ultimoResultado.tri_mt, turma: alunoHistorico.mediaTurma.mt, color: 'bg-indigo-500' },
                   ].map(area => {
                     const diff = (area.aluno || 0) - area.turma;
                     return (
                       <div key={area.label} className="flex items-center gap-3">
-                        <span className="w-8 font-medium">{area.label}:</span>
-                        <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
+                        <span className="w-8 font-bold text-gray-700 dark:text-gray-300">{area.label}:</span>
+                        <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                           <div
-                            className={`h-full ${diff >= 0 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                            className={`h-full ${area.color} rounded-full transition-all duration-500`}
                             style={{ width: `${Math.min(((area.aluno || 0) / 1000) * 100, 100)}%` }}
                           />
                         </div>
-                        <span className="w-16 text-right font-medium">{area.aluno?.toFixed(0) || '-'}</span>
-                        <span className="w-24 text-xs text-gray-500">
-                          (turma: {area.turma.toFixed(0)})
-                        </span>
-                        <span className={`w-12 text-xs font-medium ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className="w-16 text-right font-bold">{area.aluno?.toFixed(0) || '-'}</span>
+                        <span className="w-24 text-xs text-gray-500">(turma: {area.turma.toFixed(0)})</span>
+                        <span className={`w-14 text-xs font-bold ${diff >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {diff >= 0 ? '+' : ''}{diff.toFixed(0)}
                         </span>
                       </div>
@@ -1441,10 +1632,10 @@ export default function EscolaPage() {
 
               {/* Histórico de Provas */}
               <div>
-                <h4 className="font-medium mb-3">Histórico de Provas ({alunoHistorico.totalProvas})</h4>
+                <h4 className="font-bold mb-4 text-gray-900 dark:text-white">Histórico de Provas ({alunoHistorico.totalProvas})</h4>
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-gray-50 dark:bg-gray-800">
                       <TableHead>Prova</TableHead>
                       <TableHead className="text-center">Acertos</TableHead>
                       <TableHead className="text-center">LC</TableHead>
@@ -1455,7 +1646,7 @@ export default function EscolaPage() {
                   </TableHeader>
                   <TableBody>
                     {alunoHistorico.historico.map((prova) => (
-                      <TableRow key={prova.id}>
+                      <TableRow key={prova.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                         <TableCell>
                           <div>
                             <p className="font-medium">{prova.prova}</p>
@@ -1464,11 +1655,11 @@ export default function EscolaPage() {
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center font-medium">{prova.acertos}</TableCell>
-                        <TableCell className="text-center">{prova.tri_lc?.toFixed(0) || '-'}</TableCell>
-                        <TableCell className="text-center">{prova.tri_ch?.toFixed(0) || '-'}</TableCell>
-                        <TableCell className="text-center">{prova.tri_cn?.toFixed(0) || '-'}</TableCell>
-                        <TableCell className="text-center">{prova.tri_mt?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center font-bold">{prova.acertos}</TableCell>
+                        <TableCell className="text-center text-cyan-600">{prova.tri_lc?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center text-orange-600">{prova.tri_ch?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center text-emerald-600">{prova.tri_cn?.toFixed(0) || '-'}</TableCell>
+                        <TableCell className="text-center text-indigo-600">{prova.tri_mt?.toFixed(0) || '-'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1477,31 +1668,36 @@ export default function EscolaPage() {
 
               {/* Evolução */}
               {alunoHistorico.evolucao && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-medium mb-2">Evolução</h4>
+                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-xl">
+                  <h4 className="font-bold mb-3 text-gray-900 dark:text-white">Evolução</h4>
                   <div className="flex flex-wrap gap-4 text-sm">
-                    <span>
-                      Acertos: <span className={alunoHistorico.evolucao.acertos >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className="flex items-center gap-1">
+                      Acertos:
+                      <span className={`font-bold ${alunoHistorico.evolucao.acertos >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {alunoHistorico.evolucao.acertos >= 0 ? '+' : ''}{alunoHistorico.evolucao.acertos}
                       </span>
                     </span>
-                    <span>
-                      LC: <span className={alunoHistorico.evolucao.tri_lc >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className="flex items-center gap-1">
+                      LC:
+                      <span className={`font-bold ${alunoHistorico.evolucao.tri_lc >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {alunoHistorico.evolucao.tri_lc >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_lc.toFixed(0)}
                       </span>
                     </span>
-                    <span>
-                      CH: <span className={alunoHistorico.evolucao.tri_ch >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className="flex items-center gap-1">
+                      CH:
+                      <span className={`font-bold ${alunoHistorico.evolucao.tri_ch >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {alunoHistorico.evolucao.tri_ch >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_ch.toFixed(0)}
                       </span>
                     </span>
-                    <span>
-                      CN: <span className={alunoHistorico.evolucao.tri_cn >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className="flex items-center gap-1">
+                      CN:
+                      <span className={`font-bold ${alunoHistorico.evolucao.tri_cn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {alunoHistorico.evolucao.tri_cn >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_cn.toFixed(0)}
                       </span>
                     </span>
-                    <span>
-                      MT: <span className={alunoHistorico.evolucao.tri_mt >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className="flex items-center gap-1">
+                      MT:
+                      <span className={`font-bold ${alunoHistorico.evolucao.tri_mt >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {alunoHistorico.evolucao.tri_mt >= 0 ? '+' : ''}{alunoHistorico.evolucao.tri_mt.toFixed(0)}
                       </span>
                     </span>
@@ -1512,6 +1708,6 @@ export default function EscolaPage() {
           )}
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </div>
   );
 }
