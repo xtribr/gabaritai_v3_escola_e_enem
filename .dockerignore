@@ -75,5 +75,5 @@ vercel.json
 
 # Arquivos de projeto/PRD
 ralph-parte2/
-attached_assets/
+# attached_assets/ é necessário para templates de gabarito (geração de PDFs)
 # tri/ é necessário para dados TRI (cálculo de notas ENEM)
