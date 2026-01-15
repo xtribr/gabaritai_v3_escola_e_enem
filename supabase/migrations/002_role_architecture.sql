@@ -6,7 +6,7 @@
 -- PERFIL 3: STUDENT (Aluno) - Aluno de uma escola
 -- =============================================================================
 
--- 1. GARANTIR QUE A TABELA SCHOOLS EXISTE
+-- 1. GARANTIR QUE A TABELA SCHOOLS EXISTE E TEM TODAS AS COLUNAS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS schools (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,6 +23,47 @@ CREATE TABLE IF NOT EXISTS schools (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Adicionar colunas que podem estar faltando (se tabela já existia)
+DO $$
+BEGIN
+  -- active
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'active') THEN
+    ALTER TABLE schools ADD COLUMN active BOOLEAN DEFAULT true;
+  END IF;
+  -- cnpj
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'cnpj') THEN
+    ALTER TABLE schools ADD COLUMN cnpj TEXT;
+  END IF;
+  -- address
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'address') THEN
+    ALTER TABLE schools ADD COLUMN address TEXT;
+  END IF;
+  -- city
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'city') THEN
+    ALTER TABLE schools ADD COLUMN city TEXT;
+  END IF;
+  -- state
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'state') THEN
+    ALTER TABLE schools ADD COLUMN state TEXT;
+  END IF;
+  -- contact_email
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'contact_email') THEN
+    ALTER TABLE schools ADD COLUMN contact_email TEXT;
+  END IF;
+  -- contact_phone
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'contact_phone') THEN
+    ALTER TABLE schools ADD COLUMN contact_phone TEXT;
+  END IF;
+  -- logo_url
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'logo_url') THEN
+    ALTER TABLE schools ADD COLUMN logo_url TEXT;
+  END IF;
+  -- updated_at
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'schools' AND column_name = 'updated_at') THEN
+    ALTER TABLE schools ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
 
 -- Índices para schools
 CREATE INDEX IF NOT EXISTS idx_schools_slug ON schools(slug);

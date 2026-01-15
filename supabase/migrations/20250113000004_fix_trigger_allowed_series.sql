@@ -38,21 +38,21 @@ BEGIN
   v_name := SUBSTRING(
     REGEXP_REPLACE(
       COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-      '[<>"\'`;]', '', 'g'
+      '[<>"'';`]', '', 'g'
     ), 1, 255
   );
 
   v_student_number := SUBSTRING(
     REGEXP_REPLACE(
       COALESCE(NEW.raw_user_meta_data->>'student_number', ''),
-      '[^a-zA-Z0-9\-_]', '', 'g'
+      '[^a-zA-Z0-9_-]', '', 'g'
     ), 1, 50
   );
 
   v_turma := SUBSTRING(
     REGEXP_REPLACE(
       COALESCE(NEW.raw_user_meta_data->>'turma', ''),
-      '[<>"\'`;]', '', 'g'
+      '[<>"'';`]', '', 'g'
     ), 1, 50
   );
 

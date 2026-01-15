@@ -74,3 +74,4 @@ ocr_service/venv/
 python_omr_service/venv/
 .vercel
 .env*.local
+supabase/.branches/
