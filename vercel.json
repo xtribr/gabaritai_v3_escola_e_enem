@@ -24,6 +24,5 @@
         }
       ]
     }
-  ],
-  "ignoreCommand": "exit 0"
+  ]
 }
