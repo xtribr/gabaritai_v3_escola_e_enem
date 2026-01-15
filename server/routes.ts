@@ -4338,6 +4338,177 @@ Para cada disciplina:
     }
   });
 
+  // POST /api/admin/activate-students - Ativar alunos existentes (criar auth com senha padrão)
+  // 🔒 PROTECTED: Requer autenticação + role admin
+  // Útil para alunos importados antes da v3 que só têm entrada na tabela students
+  app.post("/api/admin/activate-students", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
+    const DEFAULT_PASSWORD = 'SENHA123';
+    console.log("[ACTIVATE] Iniciando ativação de alunos existentes...");
+
+    try {
+      const { schoolId } = req.body as { schoolId?: string };
+
+      if (!schoolId) {
+        return res.status(400).json({
+          error: "schoolId é obrigatório",
+          details: "Especifique a escola para ativar os alunos"
+        });
+      }
+
+      // Buscar slug da escola para gerar emails
+      const { data: school } = await supabaseAdmin
+        .from('schools')
+        .select('slug, name')
+        .eq('id', schoolId)
+        .single();
+
+      const schoolSlug = school?.slug || 'escola';
+      console.log(`[ACTIVATE] Escola: ${school?.name || schoolId} (slug: ${schoolSlug})`);
+
+      // Buscar alunos da tabela students que NÃO têm profile_id (não ativados)
+      const { data: studentsWithoutAuth, error: fetchError } = await supabaseAdmin
+        .from('students')
+        .select('id, matricula, name, turma')
+        .eq('school_id', schoolId)
+        .is('profile_id', null);
+
+      if (fetchError) {
+        throw new Error(`Erro ao buscar alunos: ${fetchError.message}`);
+      }
+
+      if (!studentsWithoutAuth || studentsWithoutAuth.length === 0) {
+        return res.json({
+          success: true,
+          message: "Todos os alunos já estão ativados!",
+          summary: { total: 0, activated: 0, errors: 0 }
+        });
+      }
+
+      console.log(`[ACTIVATE] Encontrados ${studentsWithoutAuth.length} aluno(s) para ativar`);
+
+      let activated = 0;
+      let errors = 0;
+      const results: { matricula: string; nome: string; status: string; message: string }[] = [];
+
+      for (const student of studentsWithoutAuth) {
+        const studentEmail = generateEmail(student.matricula.trim(), schoolSlug);
+
+        try {
+          // Verificar se já existe profile com essa matrícula (por segurança)
+          const { data: existingProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('student_number', student.matricula.trim())
+            .maybeSingle();
+
+          if (existingProfile) {
+            // Só linkar o profile_id no students
+            await supabaseAdmin
+              .from('students')
+              .update({ profile_id: existingProfile.id })
+              .eq('id', student.id);
+
+            results.push({
+              matricula: student.matricula,
+              nome: student.name,
+              status: 'linked',
+              message: 'Profile já existia, vinculado'
+            });
+            activated++;
+            continue;
+          }
+
+          // Criar auth user com senha padrão
+          const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: studentEmail,
+            password: DEFAULT_PASSWORD,
+            email_confirm: true,
+            user_metadata: {
+              name: student.name,
+              role: 'student',
+              student_number: student.matricula.trim(),
+              school_id: schoolId,
+              turma: student.turma || null,
+              must_change_password: true
+            }
+          });
+
+          if (authError) {
+            throw new Error(`Erro ao criar auth: ${authError.message}`);
+          }
+
+          const userId = authUser.user.id;
+
+          // Criar profile
+          const { error: profileError } = await supabaseAdmin
+            .from('profiles')
+            .insert({
+              id: userId,
+              email: studentEmail,
+              name: student.name,
+              role: 'student',
+              student_number: student.matricula.trim(),
+              school_id: schoolId,
+              turma: student.turma || null,
+              must_change_password: true
+            });
+
+          if (profileError) {
+            await supabaseAdmin.auth.admin.deleteUser(userId);
+            throw new Error(`Erro ao criar profile: ${profileError.message}`);
+          }
+
+          // Atualizar students com profile_id
+          await supabaseAdmin
+            .from('students')
+            .update({ profile_id: userId })
+            .eq('id', student.id);
+
+          results.push({
+            matricula: student.matricula,
+            nome: student.name,
+            status: 'activated',
+            message: `Ativado com senha ${DEFAULT_PASSWORD}`
+          });
+          activated++;
+
+        } catch (error: any) {
+          console.error(`[ACTIVATE] Erro ${student.matricula}:`, error.message);
+          results.push({
+            matricula: student.matricula,
+            nome: student.name,
+            status: 'error',
+            message: error.message
+          });
+          errors++;
+        }
+      }
+
+      console.log(`[ACTIVATE] ✅ Concluído: ${activated} ativados, ${errors} erros`);
+
+      res.json({
+        success: errors === 0,
+        summary: {
+          total: studentsWithoutAuth.length,
+          activated,
+          errors
+        },
+        results,
+        info: {
+          defaultPassword: DEFAULT_PASSWORD,
+          message: `${activated} aluno(s) ativados com senha "${DEFAULT_PASSWORD}"`
+        }
+      });
+
+    } catch (error: any) {
+      console.error("[ACTIVATE] Erro geral:", error);
+      res.status(500).json({
+        error: "Erro ao ativar alunos",
+        details: error.message
+      });
+    }
+  });
+
   // GET /api/admin/export-credentials - Exportar credenciais dos alunos
   // 🔒 PROTECTED: Requer autenticação + role admin
   app.get("/api/admin/export-credentials", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
@@ -4586,8 +4757,10 @@ Para cada disciplina:
     }
   });
 
-  // POST /api/admin/students/reset-all-passwords - Resetar senha de TODOS os alunos
+  // POST /api/admin/students/reset-all-passwords - Resetar/Criar senha de TODOS os alunos
   // 🔒 PROTECTED: Requer autenticação + role admin
+  // Se auth existe: reseta para SENHA123
+  // Se auth não existe: cria auth com SENHA123
   app.post("/api/admin/students/reset-all-passwords", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
     const DEFAULT_PASSWORD = 'SENHA123';
     const BATCH_SIZE = 5;
@@ -4596,10 +4769,21 @@ Para cada disciplina:
     try {
       const { turma, schoolId } = req.body as { turma?: string; schoolId?: string };
 
+      // Buscar slug da escola para gerar emails
+      let schoolSlug = 'escola';
+      if (schoolId) {
+        const { data: school } = await supabaseAdmin
+          .from('schools')
+          .select('slug')
+          .eq('id', schoolId)
+          .single();
+        schoolSlug = school?.slug || 'escola';
+      }
+
       // Buscar alunos (filtrados por turma/escola se especificado)
       let query = supabaseAdmin
         .from('profiles')
-        .select('id, name, student_number')
+        .select('id, name, student_number, email, school_id, turma')
         .eq('role', 'student');
 
       if (turma) query = query.eq('turma', turma);
@@ -4613,9 +4797,10 @@ Para cada disciplina:
         return;
       }
 
-      console.log(`[RESET-ALL] Resetando senha de ${students.length} aluno(s)...`);
+      console.log(`[RESET-ALL] Processando ${students.length} aluno(s)...`);
 
-      let success = 0;
+      let reset = 0;
+      let created = 0;
       let errors = 0;
       const failures: string[] = [];
 
@@ -4625,21 +4810,66 @@ Para cada disciplina:
 
         const results = await Promise.all(batch.map(async (student) => {
           try {
-            await supabaseAdmin.auth.admin.updateUserById(student.id, {
+            // Tentar atualizar auth existente
+            const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(student.id, {
               password: DEFAULT_PASSWORD,
               user_metadata: { must_change_password: true }
             });
-            return { success: true };
+
+            if (!updateError) {
+              // Auth existia, senha resetada
+              await supabaseAdmin
+                .from('profiles')
+                .update({ must_change_password: true })
+                .eq('id', student.id);
+              return { success: true, action: 'reset' };
+            }
+
+            // Se erro indica que user não existe, criar novo auth
+            if (updateError.message.includes('not found') || updateError.message.includes('User not found')) {
+              const email = student.email || generateEmail(student.student_number || '', schoolSlug);
+
+              const { data: newAuth, error: createError } = await supabaseAdmin.auth.admin.createUser({
+                id: student.id, // Usar mesmo ID do profile
+                email: email,
+                password: DEFAULT_PASSWORD,
+                email_confirm: true,
+                user_metadata: {
+                  name: student.name,
+                  role: 'student',
+                  student_number: student.student_number,
+                  school_id: student.school_id,
+                  turma: student.turma,
+                  must_change_password: true
+                }
+              });
+
+              if (createError) {
+                throw new Error(`Criar auth: ${createError.message}`);
+              }
+
+              // Atualizar profile com must_change_password
+              await supabaseAdmin
+                .from('profiles')
+                .update({ must_change_password: true, email: email })
+                .eq('id', student.id);
+
+              return { success: true, action: 'created' };
+            }
+
+            throw updateError;
           } catch (e: any) {
             return { success: false, error: `${student.student_number}: ${e.message}` };
           }
         }));
 
         results.forEach(r => {
-          if (r.success) success++;
-          else {
+          if (r.success) {
+            if (r.action === 'reset') reset++;
+            else if (r.action === 'created') created++;
+          } else {
             errors++;
-            if ('error' in r) failures.push(r.error);
+            if ('error' in r && r.error) failures.push(r.error);
           }
         });
 
@@ -4648,13 +4878,14 @@ Para cada disciplina:
         }
       }
 
-      console.log(`[RESET-ALL] ✅ Concluído: ${success} resetados, ${errors} erros`);
+      console.log(`[RESET-ALL] ✅ Concluído: ${reset} resetados, ${created} criados, ${errors} erros`);
 
       res.json({
         success: errors === 0,
         summary: {
           total: students.length,
-          success,
+          reset,
+          created,
           errors
         },
         newPassword: DEFAULT_PASSWORD,
