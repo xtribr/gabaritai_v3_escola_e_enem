@@ -1,10 +1,13 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/authFetch';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -19,7 +22,16 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -31,9 +43,10 @@ import {
   TrendingUp, TrendingDown, Minus, Target, CheckCircle2, XCircle, MinusCircle,
   History, Eye, Calendar, BarChart3, AlertTriangle, Users, GraduationCap,
   ArrowRight, Lightbulb, Download, Lock, Unlock, Trophy, Activity, FileBarChart,
-  Bell, LogOut
+  Bell, LogOut, User, Key, Loader2
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useToast } from '@/hooks/use-toast';
 import {
   XAxis,
   YAxis,
@@ -457,6 +470,7 @@ function LoadingCard() {
 
 export default function StudentDashboard() {
   const { profile, signOut } = useAuth();
+  const { toast } = useToast();
 
   // Data State
   const [results, setResults] = useState<StudentResult[]>([]);
@@ -471,6 +485,14 @@ export default function StudentDashboard() {
   // Dialog state
   const [dialogResult, setDialogResult] = useState<StudentResult | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Password change modal state
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   // Filters
   const [selectedAreaFilter, setSelectedAreaFilter] = useState<string>('all');
@@ -566,6 +588,51 @@ export default function StudentDashboard() {
     fetchStudyPlan();
   }, [selectedExamId, profile?.id]);
 
+  // Password change handler
+  const handlePasswordChange = async () => {
+    setPasswordError(null);
+
+    // Validations
+    if (!newPassword || !confirmPassword) {
+      setPasswordError('Preencha todos os campos');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('A nova senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('As senhas não coincidem');
+      return;
+    }
+
+    setPasswordLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (error) {
+        setPasswordError(error.message);
+      } else {
+        // Clear form and close modal
+        setShowPasswordModal(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        toast({
+          title: 'Senha alterada!',
+          description: 'Sua senha foi alterada com sucesso.',
+        });
+      }
+    } catch (err) {
+      setPasswordError('Erro ao alterar senha. Tente novamente.');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   // Computed values
   const selectedResult = results.find(r => r.exam_id === selectedExamId) || (results.length > 0 ? results[0] : null);
   const totalProvas = results.length;
@@ -658,16 +725,34 @@ export default function StudentDashboard() {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F26A4B] rounded-full" />
             </button>
 
-            {/* Logout Button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={signOut}
-              className="text-gray-500 hover:text-red-500 hover:bg-red-50"
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">Sair</span>
-            </Button>
+            {/* Profile Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800"
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33B5E5] to-[#1E9FCC] flex items-center justify-center">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="hidden sm:inline">{profile?.name?.split(' ')[0] || 'Perfil'}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowPasswordModal(true)} className="cursor-pointer">
+                  <Key className="w-4 h-4 mr-2" />
+                  Alterar Senha
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="cursor-pointer text-red-600 focus:text-red-600">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
@@ -1395,6 +1480,79 @@ export default function StudentDashboard() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Change Modal */}
+      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-cyan-600" />
+              Alterar Senha
+            </DialogTitle>
+            <DialogDescription>
+              Digite sua nova senha. A senha deve ter pelo menos 6 caracteres.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">Nova Senha</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="••••••••"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmar Nova Senha</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+
+            {passwordError && (
+              <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg">
+                {passwordError}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPasswordModal(false);
+                setNewPassword('');
+                setConfirmPassword('');
+                setPasswordError(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handlePasswordChange}
+              disabled={passwordLoading}
+              className="bg-gradient-to-r from-[#33B5E5] to-[#1E9FCC] hover:from-[#2da5d3] hover:to-[#1a8fb8]"
+            >
+              {passwordLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Alterando...
+                </>
+              ) : (
+                'Alterar Senha'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
