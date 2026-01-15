@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -16,7 +16,8 @@ import {
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Eye, Download,
   BookOpen, CheckCircle2, XCircle, Filter, FileSpreadsheet,
-  LayoutDashboard, ClipboardList, GraduationCap, LogOut
+  LayoutDashboard, ClipboardList, GraduationCap, LogOut,
+  AlertCircle, Award, BarChart3, Target
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -52,6 +53,26 @@ interface AlunoDestaque {
   acertos: number;
 }
 
+interface PerformanceTri {
+  totalAlunosComTri: number;
+  triMediaGeral: number;
+  triMin: number;
+  triMax: number;
+  alunosAcimaMedia: number;
+  alunosEmMedia: number;
+  alunosAbaixoMedia: number;
+  alunosAltoDesempenho: number;
+  alunosMedioDesempenho: number;
+  alunosBaixoDesempenho: number;
+}
+
+interface AlunoTri {
+  nome: string;
+  matricula: string | null;
+  turma: string;
+  triMedia: number;
+}
+
 interface DashboardData {
   stats: DashboardStats;
   turmaRanking: TurmaRanking[];
@@ -61,6 +82,7 @@ interface DashboardData {
     cn: number | null;
     mt: number | null;
   };
+  performanceTri?: PerformanceTri;
   topAlunos: AlunoDestaque[];
   atencao: AlunoDestaque[];
   series: string[];
@@ -530,6 +552,12 @@ export default function EscolaPage() {
   });
   const [expandedListId, setExpandedListId] = useState<string | null>(null);
 
+  // Student list modal state (performance TRI)
+  const [studentsListDialogOpen, setStudentsListDialogOpen] = useState(false);
+  const [studentsListCategory, setStudentsListCategory] = useState<string>("");
+  const [studentsListData, setStudentsListData] = useState<AlunoTri[]>([]);
+  const [loadingStudentsList, setLoadingStudentsList] = useState(false);
+
   // Fetch dashboard data
   const fetchDashboard = useCallback(async () => {
     try {
@@ -587,6 +615,24 @@ export default function EscolaPage() {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } finally {
       setLoadingAlunoHistorico(false);
+    }
+  }, [toast]);
+
+  // Fetch alunos por categoria TRI
+  const fetchAlunosPorTri = useCallback(async (category: string) => {
+    try {
+      setLoadingStudentsList(true);
+      setStudentsListDialogOpen(true);
+      setStudentsListCategory(category);
+      const response = await authFetch(`/api/escola/alunos-por-tri?category=${encodeURIComponent(category)}`);
+      if (!response.ok) throw new Error('Erro ao buscar alunos');
+      const data = await response.json();
+      setStudentsListData(data.alunos || []);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      setStudentsListDialogOpen(false);
+    } finally {
+      setLoadingStudentsList(false);
     }
   }, [toast]);
 
@@ -983,6 +1029,231 @@ export default function EscolaPage() {
                   </ResponsiveContainer>
                 </div>
               </div>
+
+              {/* Relatório de Performance XTRI */}
+              {dashboardData?.performanceTri && dashboardData.performanceTri.totalAlunosComTri > 0 && (
+                <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden lg:col-span-2">
+                  <div className="p-6">
+                    <div className="flex items-center gap-2 mb-6">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                        <Target className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg text-gray-900 dark:text-white">Relatório de Performance XTRI</h3>
+                        <p className="text-xs text-gray-500">Análise diagnóstica para coordenação pedagógica</p>
+                      </div>
+                    </div>
+
+                    {/* Primeira linha: Estatísticas gerais */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <Card className="border-2 border-blue-200 dark:border-blue-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Total de Alunos</p>
+                              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{dashboardData.performanceTri.totalAlunosComTri}</p>
+                            </div>
+                            <Users className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-purple-200 dark:border-purple-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">TRI Médio da Turma</p>
+                              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{dashboardData.performanceTri.triMediaGeral}</p>
+                              <p className="text-xs text-muted-foreground mt-1">Min: {dashboardData.performanceTri.triMin} • Max: {dashboardData.performanceTri.triMax}</p>
+                            </div>
+                            <BarChart3 className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-cyan-200 dark:border-cyan-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Taxa de Acertos</p>
+                              <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
+                                {dashboardData.stats.mediaAcertos ? `${Math.round((dashboardData.stats.mediaAcertos / 180) * 100)}%` : '-'}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">Média: {Math.round(dashboardData.stats.mediaAcertos || 0)} de 180 questões</p>
+                            </div>
+                            <Target className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Segunda linha: Distribuição de desempenho */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <Card className="border-2 border-green-200 dark:border-green-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Alunos Acima da Média</p>
+                              <div className="flex items-baseline gap-2">
+                                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{dashboardData.performanceTri.alunosAcimaMedia}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                    ? Math.round((dashboardData.performanceTri.alunosAcimaMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                    : 0}%)
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">TRI ≥ 600</p>
+                              {dashboardData.performanceTri.alunosAcimaMedia > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("acima-media")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <Trophy className="h-8 w-8 text-green-600 dark:text-green-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-orange-200 dark:border-orange-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Alunos em Média</p>
+                              <div className="flex items-baseline gap-2">
+                                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{dashboardData.performanceTri.alunosEmMedia}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                    ? Math.round((dashboardData.performanceTri.alunosEmMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                    : 0}%)
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">TRI 500-599</p>
+                              {dashboardData.performanceTri.alunosEmMedia > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("em-media")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <TrendingUp className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-red-200 dark:border-red-800">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Alunos Abaixo da Média</p>
+                              <div className="flex items-baseline gap-2">
+                                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{dashboardData.performanceTri.alunosAbaixoMedia}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  ({dashboardData.performanceTri.totalAlunosComTri > 0
+                                    ? Math.round((dashboardData.performanceTri.alunosAbaixoMedia / dashboardData.performanceTri.totalAlunosComTri) * 100)
+                                    : 0}%)
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">TRI &lt; 500</p>
+                              {dashboardData.performanceTri.alunosAbaixoMedia > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("abaixo-media")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Terceira linha: Faixas de desempenho */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Card className="border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Alto Desempenho</p>
+                              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{dashboardData.performanceTri.alunosAltoDesempenho}</p>
+                              <p className="text-xs text-muted-foreground mt-1">TRI ≥ 600</p>
+                              {dashboardData.performanceTri.alunosAltoDesempenho > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("alto-desempenho")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <Award className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-950/20">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Médio Desempenho</p>
+                              <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{dashboardData.performanceTri.alunosMedioDesempenho}</p>
+                              <p className="text-xs text-muted-foreground mt-1">TRI 400-599</p>
+                              {dashboardData.performanceTri.alunosMedioDesempenho > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("medio-desempenho")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <BarChart3 className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-2 border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/20">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Baixo Desempenho</p>
+                              <p className="text-2xl font-bold text-rose-600 dark:text-rose-400">{dashboardData.performanceTri.alunosBaixoDesempenho}</p>
+                              <p className="text-xs text-muted-foreground mt-1">TRI &lt; 400</p>
+                              {dashboardData.performanceTri.alunosBaixoDesempenho > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-6 text-xs"
+                                  onClick={() => fetchAlunosPorTri("baixo-desempenho")}
+                                >
+                                  Quem são?
+                                </Button>
+                              )}
+                            </div>
+                            <AlertCircle className="h-8 w-8 text-rose-600 dark:text-rose-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Top 5 Alunos */}
               <TopAlunosCard alunos={dashboardData?.topAlunos || []} type="top" />
@@ -1660,6 +1931,72 @@ export default function EscolaPage() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Lista de Alunos por Categoria TRI */}
+      <Dialog open={studentsListDialogOpen} onOpenChange={setStudentsListDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {studentsListCategory === "acima-media" && "Alunos Acima da Média (TRI ≥ 600)"}
+              {studentsListCategory === "em-media" && "Alunos em Média (TRI 500-599)"}
+              {studentsListCategory === "abaixo-media" && "Alunos Abaixo da Média (TRI < 500)"}
+              {studentsListCategory === "alto-desempenho" && "Alto Desempenho (TRI ≥ 600)"}
+              {studentsListCategory === "medio-desempenho" && "Médio Desempenho (TRI 400-599)"}
+              {studentsListCategory === "baixo-desempenho" && "Baixo Desempenho (TRI < 400)"}
+            </DialogTitle>
+            <DialogDescription>
+              Total: {studentsListData.length} aluno{studentsListData.length !== 1 ? 's' : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {loadingStudentsList ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
+              </div>
+            ) : studentsListData.length > 0 ? (
+              <div className="space-y-2">
+                {studentsListData.map((aluno, index) => (
+                  <div
+                    key={`${aluno.matricula || aluno.nome}-${index}`}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">{aluno.nome}</p>
+                        {aluno.matricula && (
+                          <p className="text-xs text-muted-foreground">Matrícula: {aluno.matricula}</p>
+                        )}
+                        {aluno.turma && (
+                          <p className="text-xs text-muted-foreground">Turma: {aluno.turma}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-primary">TRI: {aluno.triMedia}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">Nenhum aluno encontrado nesta categoria.</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setStudentsListDialogOpen(false)}
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

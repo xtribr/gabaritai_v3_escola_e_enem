@@ -6780,6 +6780,35 @@ Para cada disciplina:
           acertos: r.correct_answers,
         }));
 
+      // Calcular estatísticas de performance baseadas em TRI
+      const alunosComTri = Object.values(studentBest).map((r: any) => {
+        const triMedia = r.tri_lc && r.tri_ch && r.tri_cn && r.tri_mt
+          ? (r.tri_lc + r.tri_ch + r.tri_cn + r.tri_mt) / 4
+          : null;
+        return { ...r, triMedia };
+      }).filter((a: any) => a.triMedia != null);
+
+      const totalAlunosComTri = alunosComTri.length;
+      const triMediaGeral = totalAlunosComTri > 0
+        ? alunosComTri.reduce((sum: number, a: any) => sum + a.triMedia, 0) / totalAlunosComTri
+        : 0;
+
+      // Contagem por faixa de desempenho TRI
+      const alunosAcimaMedia = alunosComTri.filter((a: any) => a.triMedia >= 600).length;
+      const alunosEmMedia = alunosComTri.filter((a: any) => a.triMedia >= 500 && a.triMedia < 600).length;
+      const alunosAbaixoMedia = alunosComTri.filter((a: any) => a.triMedia < 500).length;
+      const alunosAltoDesempenho = alunosComTri.filter((a: any) => a.triMedia >= 600).length;
+      const alunosMedioDesempenho = alunosComTri.filter((a: any) => a.triMedia >= 400 && a.triMedia < 600).length;
+      const alunosBaixoDesempenho = alunosComTri.filter((a: any) => a.triMedia < 400).length;
+
+      // Calcular min e max TRI
+      const triMin = totalAlunosComTri > 0
+        ? Math.min(...alunosComTri.map((a: any) => a.triMedia))
+        : 0;
+      const triMax = totalAlunosComTri > 0
+        ? Math.max(...alunosComTri.map((a: any) => a.triMedia))
+        : 0;
+
       // Contar provas únicas (filtrado por escola para school_admin)
       let examsQuery = supabaseAdmin
         .from("exams")
@@ -6806,6 +6835,18 @@ Para cada disciplina:
           cn: triCount > 0 ? totalCN / triCount : null,
           mt: triCount > 0 ? totalMT / triCount : null,
         },
+        performanceTri: {
+          totalAlunosComTri,
+          triMediaGeral: Math.round(triMediaGeral),
+          triMin: Math.round(triMin),
+          triMax: Math.round(triMax),
+          alunosAcimaMedia,
+          alunosEmMedia,
+          alunosAbaixoMedia,
+          alunosAltoDesempenho,
+          alunosMedioDesempenho,
+          alunosBaixoDesempenho,
+        },
         topAlunos,
         atencao,
         series: Array.from(seriesSet).sort(),
@@ -6814,6 +6855,115 @@ Para cada disciplina:
 
     } catch (error: any) {
       console.error("[ESCOLA DASHBOARD] Erro:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/escola/alunos-por-tri - Lista alunos filtrados por faixa TRI
+  // PROTEGIDO: Apenas school_admin e super_admin
+  app.get("/api/escola/alunos-por-tri", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
+    try {
+      const profile = (req as any).profile;
+      const allowedSeries = profile?.allowed_series || null;
+      const schoolId = profile?.school_id;
+      const category = req.query.category as string;
+
+      if (!category) {
+        return res.status(400).json({ error: "Categoria é obrigatória" });
+      }
+
+      // Buscar todos os resultados
+      let answersQuery = supabaseAdmin
+        .from("student_answers")
+        .select(`
+          id,
+          student_name,
+          student_number,
+          turma,
+          correct_answers,
+          tri_lc,
+          tri_ch,
+          tri_cn,
+          tri_mt,
+          created_at
+        `)
+        .order("created_at", { ascending: false });
+
+      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      if (profile?.role === 'school_admin' && schoolId) {
+        answersQuery = answersQuery.eq('school_id', schoolId);
+      }
+
+      const { data: answers, error: answersError } = await answersQuery;
+
+      if (answersError) throw answersError;
+
+      // Filter by allowed_series if coordinator has restrictions
+      const filteredAnswers = (answers || []).filter((a: any) =>
+        isTurmaAllowed(a.turma, allowedSeries)
+      );
+
+      // Agrupar por aluno e pegar o melhor resultado de TRI média
+      const studentBest: Record<string, any> = {};
+      filteredAnswers.forEach((r: any) => {
+        const key = r.student_number || r.student_name;
+        const triMedia = r.tri_lc && r.tri_ch && r.tri_cn && r.tri_mt
+          ? (r.tri_lc + r.tri_ch + r.tri_cn + r.tri_mt) / 4
+          : null;
+
+        if (!studentBest[key] || (triMedia && (!studentBest[key].triMedia || triMedia > studentBest[key].triMedia))) {
+          studentBest[key] = {
+            ...r,
+            triMedia: triMedia
+          };
+        }
+      });
+
+      // Filtrar por categoria
+      let alunosFiltrados = Object.values(studentBest).filter((a: any) => a.triMedia != null);
+
+      switch (category) {
+        case "acima-media":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia >= 600);
+          break;
+        case "em-media":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia >= 500 && a.triMedia < 600);
+          break;
+        case "abaixo-media":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia < 500);
+          break;
+        case "alto-desempenho":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia >= 600);
+          break;
+        case "medio-desempenho":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia >= 400 && a.triMedia < 600);
+          break;
+        case "baixo-desempenho":
+          alunosFiltrados = alunosFiltrados.filter((a: any) => a.triMedia < 400);
+          break;
+        default:
+          return res.status(400).json({ error: "Categoria inválida" });
+      }
+
+      // Ordenar por TRI (maior para menor)
+      alunosFiltrados.sort((a: any, b: any) => (b.triMedia || 0) - (a.triMedia || 0));
+
+      // Formatar resposta
+      const resultado = alunosFiltrados.map((a: any) => ({
+        nome: a.student_name,
+        matricula: a.student_number,
+        turma: a.turma || "Sem turma",
+        triMedia: Math.round(a.triMedia),
+      }));
+
+      res.json({
+        category,
+        total: resultado.length,
+        alunos: resultado
+      });
+
+    } catch (error: any) {
+      console.error("[ESCOLA ALUNOS POR TRI] Erro:", error);
       res.status(500).json({ error: error.message });
     }
   });
