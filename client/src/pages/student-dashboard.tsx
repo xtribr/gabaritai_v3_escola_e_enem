@@ -668,7 +668,7 @@ export default function StudentDashboard() {
   };
 
   // Refs
-  const historyRef = useRef<HTMLDivElement>(null);
+  // historyRef removido - seção "Histórico de Provas" foi removida
 
   // Fetch results
   useEffect(() => {
@@ -1522,87 +1522,7 @@ export default function StudentDashboard() {
               </div>
             </section>
 
-            {/* ============================================================ */}
-            {/* HISTORY TABLE */}
-            {/* ============================================================ */}
-            <section ref={historyRef} className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <History className="w-6 h-6 text-[#F26A4B]" />
-                Histórico de Provas
-              </h2>
-
-              <Card className="border-2 border-gray-100 dark:border-gray-800 shadow-lg rounded-2xl overflow-hidden">
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gradient-to-r from-cyan-50 to-orange-50/50 dark:from-cyan-950/30 dark:to-orange-950/30">
-                        <TableHead className="font-semibold">Data</TableHead>
-                        <TableHead className="font-semibold">Prova</TableHead>
-                        <TableHead className="text-center font-semibold">Acertos</TableHead>
-                        <TableHead className="text-center font-semibold">TRI</TableHead>
-                        <TableHead className="text-center font-semibold">Evolução</TableHead>
-                        <TableHead className="text-right font-semibold">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {results.map((result, index) => {
-                        const prevTRI = getPreviousTRI(index);
-                        const diff = result.tri_score && prevTRI ? result.tri_score - prevTRI : null;
-
-                        return (
-                          <TableRow key={result.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                            <TableCell className="font-medium">
-                              {new Date(result.created_at).toLocaleDateString('pt-BR', {
-                                day: '2-digit', month: '2-digit', year: 'numeric'
-                              })}
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <p className="font-medium">{result.exams?.title || 'Prova'}</p>
-                                <p className="text-xs text-gray-500">{result.exams?.template_type || 'ENEM'}</p>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="font-medium text-emerald-600">{result.correct_answers ?? '-'}</span>
-                              <span className="text-gray-400">/{result.answers?.length || '-'}</span>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge className={`${classificarTRI(result.tri_score).bgColor} ${classificarTRI(result.tri_score).color} border-0`}>
-                                {result.tri_score?.toFixed(0) || '---'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {diff !== null ? (
-                                <div className={`flex items-center justify-center gap-1 ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                                  {diff > 0 ? <TrendingUp className="w-4 h-4" /> : diff < 0 ? <TrendingDown className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-                                  <span className="text-xs font-medium">{diff > 0 ? '+' : ''}{diff.toFixed(0)}</span>
-                                </div>
-                              ) : (
-                                <Minus className="w-4 h-4 text-gray-400 mx-auto" />
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setDialogResult(result);
-                                  setDialogOpen(true);
-                                }}
-                                className="hover:bg-cyan-50 hover:text-[#33B5E5]"
-                              >
-                                <Eye className="w-4 h-4 mr-1" />
-                                Ver
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </section>
+            {/* Seção "Histórico de Provas" removida conforme solicitado */}
           </>
         )}
       </main>
