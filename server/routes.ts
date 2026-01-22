@@ -1179,7 +1179,7 @@ export async function registerRoutes(
 
     } catch (error: any) {
       console.log("❌ DEBUG: Erro:", error.message);
-      res.status(500).json({ error: "Erro interno", details: error.message });
+      res.status(500).json({ error: "Erro interno" });
     }
   });
 
@@ -1271,7 +1271,6 @@ export async function registerRoutes(
       console.error("Excel Export Error:", error);
       res.status(500).json({
         error: "Erro ao exportar Excel",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -1470,7 +1469,6 @@ export async function registerRoutes(
       console.error("[GENERATE-PDF] Erro:", error);
       res.status(500).json({
         error: "Erro ao gerar PDFs",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -1539,7 +1537,6 @@ export async function registerRoutes(
       console.error("[PREVIEW-CSV] Erro:", error);
       res.status(400).json({
         error: "Erro ao processar CSV",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -1662,8 +1659,7 @@ export async function registerRoutes(
       if (!res.headersSent) {
         res.status(500).json({
           error: "Erro ao criar arquivo ZIP",
-          details: error instanceof Error ? error.message : "Erro desconhecido",
-        });
+          });
       }
     }
   });
@@ -1709,7 +1705,8 @@ export async function registerRoutes(
   });
 
   // Endpoint TRI V2 - Coerência Pedagógica (Python Service)
-  app.post("/api/calculate-tri-v2", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação (recurso computacional)
+  app.post("/api/calculate-tri-v2", requireAuth, async (req: Request, res: Response) => {
     try {
       const { alunos, gabarito, areas_config } = req.body;
 
@@ -1745,7 +1742,6 @@ export async function registerRoutes(
       console.error("[TRI V2] Erro ao calcular TRI V2:", error);
       res.status(500).json({
         error: "Erro ao calcular TRI V2",
-        details: error.message || "Erro desconhecido"
         // 🔒 SEGURANÇA: Stack trace removido para não expor código interno
       });
     }
@@ -1753,7 +1749,8 @@ export async function registerRoutes(
 
   // Endpoint to get TRI estimate with coherence (Two-Pass Algorithm)
   // ATUALIZADO: Usar serviço Python V2 quando disponível
-  app.post("/api/calculate-tri", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação (recurso computacional)
+  app.post("/api/calculate-tri", requireAuth, async (req: Request, res: Response) => {
     try {
       const { students, area, ano, questionStats, answerKey, startQuestion, endQuestion } = req.body as {
         students: StudentData[];
@@ -2033,13 +2030,13 @@ export async function registerRoutes(
       console.error("[TRI BACKEND] Erro ao calcular TRI:", error);
       res.status(500).json({
         error: "Erro ao calcular notas TRI",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
 
   // Análise pedagógica com IA
-  app.post("/api/analyze-performance", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/analyze-performance", requireAuth, async (req: Request, res: Response) => {
     try {
       const { students, triScores, triScoresByArea } = req.body;
 
@@ -2225,7 +2222,6 @@ IMPORTANTE:
       console.error("[Análise IA] Erro:", error);
       res.status(500).json({
         error: "Erro ao gerar análise com IA",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -2234,7 +2230,8 @@ IMPORTANTE:
   // ENDPOINT DE ANÁLISE ENEM/TRI COM ASSISTANT API
   // ============================================================================
 
-  app.post("/api/analise-enem-tri", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/analise-enem-tri", requireAuth, async (req: Request, res: Response) => {
     try {
       const {
         respostasAluno,
@@ -2815,7 +2812,6 @@ Para cada questão com baixo % de acertos:
       console.error("[Análise ENEM/TRI] Erro:", error);
       res.status(500).json({
         error: "Erro ao gerar análise com Assistant",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -2824,7 +2820,8 @@ Para cada questão com baixo % de acertos:
   // ENDPOINT DE ANÁLISE ESCOLA (Modo Escola)
   // ============================================================================
 
-  app.post("/api/analise-escola", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/analise-escola", requireAuth, async (req: Request, res: Response) => {
     try {
       const {
         modo,
@@ -2982,7 +2979,6 @@ Para cada disciplina:
       console.error("[Análise Escola] Erro:", error);
       res.status(500).json({
         error: "Erro ao gerar análise",
-        details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
   });
@@ -3160,7 +3156,6 @@ Para cada disciplina:
       console.error("[AVALIACOES] Erro ao salvar:", error);
       res.status(500).json({
         error: "Erro ao salvar avaliação",
-        details: error.message
       });
     }
   });
@@ -3234,7 +3229,6 @@ Para cada disciplina:
       console.error("[AVALIACOES] Erro ao listar:", error);
       res.status(500).json({
         error: "Erro ao listar avaliações",
-        details: error.message
       });
     }
   });
@@ -3295,7 +3289,6 @@ Para cada disciplina:
       console.error("[AVALIACOES] Erro ao buscar:", error);
       res.status(500).json({
         error: "Erro ao buscar avaliação",
-        details: error.message
       });
     }
   });
@@ -3355,7 +3348,6 @@ Para cada disciplina:
       console.error("[AVALIACOES] Erro ao deletar:", error);
       res.status(500).json({
         error: "Erro ao deletar avaliação",
-        details: error.message
       });
     }
   });
@@ -3442,7 +3434,6 @@ Para cada disciplina:
       console.error("[PROJETOS] Erro ao salvar:", error);
       res.status(500).json({
         error: "Erro ao salvar projeto",
-        details: error.message
       });
     }
   });
@@ -3482,7 +3473,6 @@ Para cada disciplina:
       console.error("[PROJETOS] Erro ao listar:", error);
       res.status(500).json({
         error: "Erro ao listar projetos",
-        details: error.message
       });
     }
   });
@@ -3516,7 +3506,6 @@ Para cada disciplina:
       console.error("[PROJETOS] Erro ao buscar:", error);
       res.status(500).json({
         error: "Erro ao buscar projeto",
-        details: error.message
       });
     }
   });
@@ -3734,7 +3723,6 @@ Para cada disciplina:
       console.error("[PROJETOS] Erro ao atualizar:", error);
       res.status(500).json({
         error: "Erro ao atualizar projeto",
-        details: error.message
       });
     }
   });
@@ -3781,7 +3769,6 @@ Para cada disciplina:
       console.error("[PROJETOS] Erro ao deletar:", error);
       res.status(500).json({
         error: "Erro ao deletar projeto",
-        details: error.message
       });
     }
   });
@@ -3857,7 +3844,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao criar:", error);
       res.status(500).json({
         error: "Erro ao criar configuração",
-        details: error.message
       });
     }
   });
@@ -3876,7 +3862,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao listar:", error);
       res.status(500).json({
         error: "Erro ao listar configurações",
-        details: error.message
       });
     }
   });
@@ -3901,7 +3886,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao buscar:", error);
       res.status(500).json({
         error: "Erro ao buscar configuração",
-        details: error.message
       });
     }
   });
@@ -3959,7 +3943,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao atualizar:", error);
       res.status(500).json({
         error: "Erro ao atualizar configuração",
-        details: error.message
       });
     }
   });
@@ -3986,7 +3969,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao deletar:", error);
       res.status(500).json({
         error: "Erro ao deletar configuração",
-        details: error.message
       });
     }
   });
@@ -4007,7 +3989,6 @@ Para cada disciplina:
       console.error("[EXAM_CONFIG] Erro ao listar por usuário:", error);
       res.status(500).json({
         error: "Erro ao listar configurações",
-        details: error.message
       });
     }
   });
@@ -4270,7 +4251,6 @@ Para cada disciplina:
       console.error("[IMPORT] Erro geral:", error);
       res.status(500).json({
         error: "Erro ao importar alunos",
-        details: error.message
       });
     }
   });
@@ -4442,7 +4422,6 @@ Para cada disciplina:
       console.error("[ACTIVATE] Erro geral:", error);
       res.status(500).json({
         error: "Erro ao ativar alunos",
-        details: error.message
       });
     }
   });
@@ -4484,7 +4463,7 @@ Para cada disciplina:
 
     } catch (error: any) {
       console.error("[EXPORT_CREDENTIALS] Erro:", error);
-      res.status(500).json({ error: "Erro ao exportar credenciais", details: error.message });
+      res.status(500).json({ error: "Erro ao exportar credenciais" });
     }
   });
 
@@ -4559,7 +4538,6 @@ Para cada disciplina:
       console.error("[GET STUDENTS]", error);
       res.status(500).json({
         error: "Erro ao buscar alunos",
-        details: error.message
       });
     }
   });
@@ -4591,7 +4569,6 @@ Para cada disciplina:
       console.error("[GET TURMAS]", error);
       res.status(500).json({
         error: "Erro ao buscar turmas",
-        details: error.message
       });
     }
   });
@@ -4634,7 +4611,6 @@ Para cada disciplina:
       console.error("[DELETE STUDENT]", error);
       res.status(500).json({
         error: "Erro ao deletar aluno",
-        details: error.message
       });
     }
   });
@@ -4690,7 +4666,6 @@ Para cada disciplina:
       console.error("[RESET] Erro:", error);
       res.status(500).json({
         error: "Erro ao resetar senha",
-        details: error.message
       });
     }
   });
@@ -4833,7 +4808,6 @@ Para cada disciplina:
       console.error("[RESET-ALL] Erro:", error);
       res.status(500).json({
         error: "Erro ao resetar senhas",
-        details: error.message
       });
     }
   });
@@ -4876,60 +4850,13 @@ Para cada disciplina:
       console.error("[RESET-PWD] Erro:", error);
       res.status(500).json({
         error: "Erro ao resetar senha",
-        details: error.message
       });
     }
   });
 
-  // DELETE /api/admin/students/:id - Remover aluno
-  // 🔒 PROTECTED: Requer autenticação + role admin
-  app.delete("/api/admin/students/:id", requireAuth, requireRole('school_admin', 'super_admin'), async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-
-      // Buscar dados do aluno antes de deletar
-      const { data: student } = await supabaseAdmin
-        .from('profiles')
-        .select('name, student_number')
-        .eq('id', id)
-        .single();
-
-      if (!student) {
-        res.status(404).json({ error: "Aluno não encontrado" });
-        return;
-      }
-
-      // Deletar profile
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .delete()
-        .eq('id', id);
-
-      if (profileError) {
-        throw new Error(`Erro ao deletar profile: ${profileError.message}`);
-      }
-
-      // Deletar usuário do Auth
-      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-
-      if (authError) {
-        console.warn(`[DELETE] Profile deletado mas erro ao deletar auth user: ${authError.message}`);
-      }
-
-      console.log(`[DELETE] Aluno ${student.name} (${student.student_number}) removido`);
-
-      res.json({
-        success: true,
-        message: `Aluno ${student.name} removido com sucesso`
-      });
-    } catch (error: any) {
-      console.error("[DELETE] Erro:", error);
-      res.status(500).json({
-        error: "Erro ao remover aluno",
-        details: error.message
-      });
-    }
-  });
+  // 🔒 REMOVIDO: Endpoint duplicado DELETE /api/admin/students/:id
+  // O endpoint correto está definido acima (linha ~4601) e deleta da tabela 'students'
+  // Para deletar profiles/auth users, use DELETE /api/admin/profiles/:id
 
   // ============================================================================
   // TURMAS - Gestão e Geração de Gabaritos
@@ -4974,7 +4901,7 @@ Para cada disciplina:
       });
     } catch (error: any) {
       console.error("[TURMAS] Erro:", error);
-      res.status(500).json({ error: "Erro ao listar turmas", details: error.message });
+      res.status(500).json({ error: "Erro ao listar turmas" });
     }
   });
 
@@ -5014,7 +4941,7 @@ Para cada disciplina:
       });
     } catch (error: any) {
       console.error("[TURMAS] Erro ao listar alunos:", error);
-      res.status(500).json({ error: "Erro ao listar alunos da turma", details: error.message });
+      res.status(500).json({ error: "Erro ao listar alunos da turma" });
     }
   });
 
@@ -5058,7 +4985,7 @@ Para cada disciplina:
       });
     } catch (error: any) {
       console.error("[TURMAS] Erro ao criar turma:", error);
-      res.status(500).json({ error: "Erro ao criar turma", details: error.message });
+      res.status(500).json({ error: "Erro ao criar turma" });
     }
   });
 
@@ -5096,7 +5023,7 @@ Para cada disciplina:
       });
     } catch (error: any) {
       console.error("[TURMAS] Erro ao renomear turma:", error);
-      res.status(500).json({ error: "Erro ao renomear turma", details: error.message });
+      res.status(500).json({ error: "Erro ao renomear turma" });
     }
   });
 
@@ -5132,7 +5059,7 @@ Para cada disciplina:
       });
     } catch (error: any) {
       console.error("[TURMAS] Erro ao excluir turma:", error);
-      res.status(500).json({ error: "Erro ao excluir turma", details: error.message });
+      res.status(500).json({ error: "Erro ao excluir turma" });
     }
   });
 
@@ -5290,7 +5217,7 @@ Para cada disciplina:
 
     } catch (error: any) {
       console.error("[GABARITOS] Erro:", error);
-      res.status(500).json({ error: "Erro ao gerar gabaritos", details: error.message });
+      res.status(500).json({ error: "Erro ao gerar gabaritos" });
     }
   });
 
@@ -5387,8 +5314,7 @@ Para cada disciplina:
         console.error("[STUDENT_ANSWERS] Erro ao salvar:", error);
         return res.status(500).json({
           error: "Erro ao salvar resposta",
-          details: error.message
-        });
+          });
       }
 
       res.json({
@@ -5402,13 +5328,13 @@ Para cada disciplina:
       console.error("[STUDENT_ANSWERS] Erro:", error);
       res.status(500).json({
         error: "Erro ao salvar resposta do aluno",
-        details: error.message
       });
     }
   });
 
   // POST /api/student-answers/batch - Salvar respostas de múltiplos alunos
-  app.post("/api/student-answers/batch", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação + role admin
+  app.post("/api/student-answers/batch", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { exam_id, school_id, students } = req.body;
 
@@ -5478,8 +5404,7 @@ Para cada disciplina:
         console.error("[STUDENT_ANSWERS_BATCH] Erro:", error);
         return res.status(500).json({
           error: "Erro ao salvar respostas em lote",
-          details: error.message
-        });
+          });
       }
 
       console.log(`[STUDENT_ANSWERS_BATCH] Salvos ${data?.length} resultados, ${linkedCount} vinculados`);
@@ -5496,13 +5421,13 @@ Para cada disciplina:
       console.error("[STUDENT_ANSWERS_BATCH] Erro:", error);
       res.status(500).json({
         error: "Erro ao salvar respostas em lote",
-        details: error.message
       });
     }
   });
 
   // GET /api/student-answers/:studentId - Buscar resultados de um aluno
-  app.get("/api/student-answers/:studentId", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação (dados sensíveis de aluno)
+  app.get("/api/student-answers/:studentId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId } = req.params;
 
@@ -5520,8 +5445,7 @@ Para cada disciplina:
         console.error("[STUDENT_ANSWERS] Erro ao buscar:", error);
         return res.status(500).json({
           error: "Erro ao buscar resultados",
-          details: error.message
-        });
+          });
       }
 
       // Se não encontrou por student_id, tentar por student_number
@@ -5562,13 +5486,13 @@ Para cada disciplina:
       console.error("[STUDENT_ANSWERS] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar resultados do aluno",
-        details: error.message
       });
     }
   });
 
   // GET /api/student-dashboard-details/:studentId/:examId - Dados detalhados para dashboard do aluno
-  app.get("/api/student-dashboard-details/:studentId/:examId", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação (dados sensíveis de aluno)
+  app.get("/api/student-dashboard-details/:studentId/:examId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { studentId, examId } = req.params;
 
@@ -5860,13 +5784,13 @@ Para cada disciplina:
       console.error("[STUDENT_DASHBOARD_DETAILS] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar detalhes do dashboard",
-        details: error.message
       });
     }
   });
 
   // POST /api/exams - Criar uma prova
-  app.post("/api/exams", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação + role admin
+  app.post("/api/exams", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { school_id, title, template_type, total_questions, answer_key } = req.body;
 
@@ -5893,8 +5817,7 @@ Para cada disciplina:
         console.error("[EXAMS] Erro ao criar:", error);
         return res.status(500).json({
           error: "Erro ao criar prova",
-          details: error.message
-        });
+          });
       }
 
       res.json({
@@ -5906,7 +5829,6 @@ Para cada disciplina:
       console.error("[EXAMS] Erro:", error);
       res.status(500).json({
         error: "Erro ao criar prova",
-        details: error.message
       });
     }
   });
@@ -5939,8 +5861,7 @@ Para cada disciplina:
         console.error("[EXAMS] Erro ao atualizar:", error);
         return res.status(500).json({
           error: "Erro ao atualizar prova",
-          details: error.message
-        });
+          });
       }
 
       console.log(`[EXAMS] Gabarito atualizado para exam ${examId}: ${answer_key?.length || 0} questões`);
@@ -5954,13 +5875,13 @@ Para cada disciplina:
       console.error("[EXAMS] Erro:", error);
       res.status(500).json({
         error: "Erro ao atualizar prova",
-        details: error.message
       });
     }
   });
 
   // GET /api/exams - Listar provas
-  app.get("/api/exams", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/exams", requireAuth, async (req: Request, res: Response) => {
     try {
       const { school_id } = req.query;
 
@@ -5976,8 +5897,7 @@ Para cada disciplina:
         console.error("[EXAMS] Erro ao listar:", error);
         return res.status(500).json({
           error: "Erro ao listar provas",
-          details: error.message
-        });
+          });
       }
 
       res.json({
@@ -5989,7 +5909,6 @@ Para cada disciplina:
       console.error("[EXAMS] Erro:", error);
       res.status(500).json({
         error: "Erro ao listar provas",
-        details: error.message
       });
     }
   });
@@ -6218,7 +6137,6 @@ Para cada disciplina:
       console.error("[LOGIN] Erro:", error);
       res.status(500).json({
         error: "Erro ao fazer login",
-        details: error.message
       });
     }
   });
@@ -6341,7 +6259,6 @@ Para cada disciplina:
       console.error("[REGISTER] Erro:", error);
       res.status(500).json({
         error: "Erro ao registrar",
-        details: error.message
       });
     }
   });
@@ -6362,8 +6279,7 @@ Para cada disciplina:
         console.error("[PROFILE] Erro ao buscar:", error);
         return res.status(404).json({
           error: "Profile não encontrado",
-          details: error.message
-        });
+          });
       }
 
       res.json(data);
@@ -6372,7 +6288,6 @@ Para cada disciplina:
       console.error("[PROFILE] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar profile",
-        details: error.message
       });
     }
   });
@@ -6396,14 +6311,14 @@ Para cada disciplina:
 
       if (error) {
         console.error("[PROFILE] Erro ao atualizar:", error);
-        return res.status(500).json({ error: "Erro ao atualizar perfil", details: error.message });
+        return res.status(500).json({ error: "Erro ao atualizar perfil" });
       }
 
       res.json({ success: true, profile: data });
 
     } catch (error: any) {
       console.error("[PROFILE] Erro:", error);
-      res.status(500).json({ error: "Erro ao atualizar perfil", details: error.message });
+      res.status(500).json({ error: "Erro ao atualizar perfil" });
     }
   });
 
@@ -6472,7 +6387,7 @@ Para cada disciplina:
 
     } catch (error: any) {
       console.error("[PROFILE] Erro:", error);
-      res.status(500).json({ error: "Erro ao alterar senha", details: error.message });
+      res.status(500).json({ error: "Erro ao alterar senha" });
     }
   });
 
@@ -6586,7 +6501,6 @@ Para cada disciplina:
       console.error("[ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar dados da escola",
-        details: error.message
       });
     }
   });
@@ -7607,7 +7521,6 @@ Para cada disciplina:
       console.error("[STUDY_PLAN] Erro:", error);
       res.status(500).json({
         error: "Erro ao gerar plano de estudos",
-        details: error.message
       });
     }
   });
@@ -7655,7 +7568,6 @@ Para cada disciplina:
       console.error("[EXERCISE_LISTS] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar listas de exercícios",
-        details: error.message
       });
     }
   });
@@ -7709,7 +7621,6 @@ Para cada disciplina:
       console.error("[DOWNLOAD] Erro:", error);
       res.status(500).json({
         error: "Erro ao processar download",
-        details: error.message
       });
     }
   });
@@ -7753,7 +7664,6 @@ Para cada disciplina:
       console.error("[RELEASE_LISTS] Erro:", error);
       res.status(500).json({
         error: "Erro ao liberar listas",
-        details: error.message
       });
     }
   });
@@ -8397,8 +8307,7 @@ Para cada disciplina:
         );
       }
 
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      res.status(500).json({ error: "Erro interno ao criar coordenador", details: errorMessage });
+      res.status(500).json({ error: "Erro interno ao criar coordenador" });
     }
   });
 
@@ -8617,7 +8526,8 @@ Para cada disciplina:
    * GET /api/answer-sheet-batches/:batchId
    * Retorna detalhes de um lote
    */
-  app.get("/api/answer-sheet-batches/:batchId", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/answer-sheet-batches/:batchId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { batchId } = req.params;
 
@@ -8642,7 +8552,8 @@ Para cada disciplina:
    * GET /api/answer-sheet-batches/:batchId/pdf
    * Gera e retorna PDF com gabaritos do lote
    */
-  app.get("/api/answer-sheet-batches/:batchId/pdf", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/answer-sheet-batches/:batchId/pdf", requireAuth, async (req: Request, res: Response) => {
     try {
       const { batchId } = req.params;
 
@@ -8691,7 +8602,8 @@ Para cada disciplina:
    * GET /api/answer-sheet-students/:sheetCode
    * Busca aluno por sheet_code (QR Code)
    */
-  app.get("/api/answer-sheet-students/:sheetCode", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/answer-sheet-students/:sheetCode", requireAuth, async (req: Request, res: Response) => {
     try {
       const { sheetCode } = req.params;
 
@@ -8713,7 +8625,8 @@ Para cada disciplina:
    * Body:
    * - answers: array de respostas ["A", "B", null, "C", ...]
    */
-  app.post("/api/answer-sheet-students/:sheetCode/answers", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/answer-sheet-students/:sheetCode/answers", requireAuth, async (req: Request, res: Response) => {
     try {
       const { sheetCode } = req.params;
       const { answers } = req.body;
@@ -9132,8 +9045,7 @@ Para cada disciplina:
         console.error("[PROJETOS_ESCOLA] Erro ao criar:", error);
         return res.status(500).json({
           error: "Erro ao criar projeto",
-          details: error.message
-        });
+          });
       }
 
       console.log(`[PROJETOS_ESCOLA] Projeto criado: ${data.id} - ${nome}`);
@@ -9147,7 +9059,6 @@ Para cada disciplina:
       console.error("[PROJETOS_ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao criar projeto",
-        details: error.message
       });
     }
   });
@@ -9187,8 +9098,7 @@ Para cada disciplina:
         console.error("[PROJETOS_ESCOLA] Erro ao listar:", error);
         return res.status(500).json({
           error: "Erro ao listar projetos",
-          details: error.message
-        });
+          });
       }
 
       res.json({
@@ -9200,7 +9110,6 @@ Para cada disciplina:
       console.error("[PROJETOS_ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao listar projetos",
-        details: error.message
       });
     }
   });
@@ -9246,7 +9155,6 @@ Para cada disciplina:
       console.error("[PROJETOS_ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao buscar projeto",
-        details: error.message
       });
     }
   });
@@ -9310,8 +9218,7 @@ Para cada disciplina:
         console.error("[PROJETOS_ESCOLA] Erro ao atualizar:", error);
         return res.status(500).json({
           error: "Erro ao atualizar projeto",
-          details: error.message
-        });
+          });
       }
 
       console.log(`[PROJETOS_ESCOLA] Projeto atualizado: ${id}`);
@@ -9325,7 +9232,6 @@ Para cada disciplina:
       console.error("[PROJETOS_ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao atualizar projeto",
-        details: error.message
       });
     }
   });
@@ -9372,8 +9278,7 @@ Para cada disciplina:
         console.error("[PROJETOS_ESCOLA] Erro ao deletar:", error);
         return res.status(500).json({
           error: "Erro ao deletar projeto",
-          details: error.message
-        });
+          });
       }
 
       console.log(`[PROJETOS_ESCOLA] Projeto deletado: ${id} - ${existingProjeto.nome}`);
@@ -9387,7 +9292,6 @@ Para cada disciplina:
       console.error("[PROJETOS_ESCOLA] Erro:", error);
       res.status(500).json({
         error: "Erro ao deletar projeto",
-        details: error.message
       });
     }
   });
