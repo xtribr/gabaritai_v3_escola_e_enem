@@ -42,8 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
+      if (session?.user && session) {
+        fetchProfile(session.user.id, session);
       } else {
         setLoading(false);
       }
@@ -52,10 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listener para mudanças de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[AuthContext] Auth state changed:', event);
         setSession(session);
         setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchProfile(session.user.id);
+        if (session?.user && session) {
+          await fetchProfile(session.user.id, session);
         } else {
           setProfile(null);
           setLoading(false);
@@ -66,12 +67,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchProfile(userId: string) {
+  async function fetchProfile(userId: string, sessionParam?: Session | null) {
     console.log('[AuthContext] Fetching profile for:', userId);
 
     try {
-      // Buscar sessão atual para obter o token
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      // Usar sessão passada como parâmetro OU buscar nova
+      let accessToken = sessionParam?.access_token;
+      if (!accessToken) {
+        console.log('[AuthContext] No session param, fetching from getSession...');
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        accessToken = currentSession?.access_token;
+      }
+
+      if (!accessToken) {
+        console.error('[AuthContext] No access token available');
+        throw new Error('No access token');
+      }
 
       // Timeout de 10 segundos para evitar loading infinito
       const controller = new AbortController();
@@ -79,9 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Usar endpoint do backend que bypassa RLS
       const response = await fetch(`/api/profile/${userId}`, {
-        headers: currentSession?.access_token
-          ? { 'Authorization': `Bearer ${currentSession.access_token}` }
-          : {},
+        headers: { 'Authorization': `Bearer ${accessToken}` },
         signal: controller.signal,
       });
 
@@ -118,8 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function refreshProfile() {
-    if (user) {
-      await fetchProfile(user.id);
+    if (user && session) {
+      await fetchProfile(user.id, session);
     }
   }
 
@@ -176,8 +185,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleForcePasswordChangeSuccess = async () => {
     setShowForceChangePassword(false);
     // Recarregar profile para atualizar must_change_password
-    if (user) {
-      await fetchProfile(user.id);
+    if (user && session) {
+      await fetchProfile(user.id, session);
     }
   };
 
