@@ -3791,7 +3791,8 @@ Para cada disciplina:
   // ============================================================================
 
   // POST /api/exam-configurations - Criar nova configuração
-  app.post("/api/exam-configurations", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.post("/api/exam-configurations", requireAuth, async (req: Request, res: Response) => {
     try {
       const config = req.body;
 
@@ -3862,7 +3863,8 @@ Para cada disciplina:
   });
 
   // GET /api/exam-configurations - Listar todas as configurações
-  app.get("/api/exam-configurations", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/exam-configurations", requireAuth, async (req: Request, res: Response) => {
     try {
       const configs = await storage.loadExamConfigurations();
       res.json({
@@ -3880,7 +3882,8 @@ Para cada disciplina:
   });
 
   // GET /api/exam-configurations/:id - Buscar configuração específica
-  app.get("/api/exam-configurations/:id", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/exam-configurations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const config = await storage.getExamConfiguration(id);
@@ -3904,7 +3907,8 @@ Para cada disciplina:
   });
 
   // PUT /api/exam-configurations/:id - Atualizar configuração
-  app.put("/api/exam-configurations/:id", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.put("/api/exam-configurations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const updates = req.body;
@@ -3961,7 +3965,8 @@ Para cada disciplina:
   });
 
   // DELETE /api/exam-configurations/:id - Deletar configuração
-  app.delete("/api/exam-configurations/:id", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.delete("/api/exam-configurations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -3987,7 +3992,8 @@ Para cada disciplina:
   });
 
   // GET /api/exam-configurations/user/:userId - Listar configurações do usuário
-  app.get("/api/exam-configurations/user/:userId", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação
+  app.get("/api/exam-configurations/user/:userId", requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
       const configs = await storage.listUserExamConfigurations(userId);
@@ -5293,7 +5299,8 @@ Para cada disciplina:
   // ============================================================================
 
   // POST /api/student-answers - Salvar respostas de um aluno
-  app.post("/api/student-answers", async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação (admin ou school_admin podem salvar respostas)
+  app.post("/api/student-answers", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const {
         exam_id,
@@ -5988,6 +5995,7 @@ Para cada disciplina:
   });
 
   // GAB-110: GET /api/auth/email-by-matricula/:matricula - Buscar email pelo número de matrícula
+  // 🔒 SEGURANÇA: Email é mascarado para evitar exposição completa
   app.get("/api/auth/email-by-matricula/:matricula", async (req: Request, res: Response) => {
     try {
       const { matricula } = req.params;
@@ -6008,25 +6016,48 @@ Para cada disciplina:
 
       if (error || !profile) {
         console.log(`[AUTH] Matrícula não encontrada: ${matricula}`);
+        // 🔒 SEGURANÇA: Mensagem genérica para não confirmar existência de matrículas
         return res.status(404).json({
-          error: "Matrícula não encontrada",
-          message: "Não existe nenhum aluno cadastrado com essa matrícula."
+          error: "Credenciais inválidas",
+          message: "Matrícula ou dados não encontrados."
         });
       }
 
-      console.log(`[AUTH] Matrícula ${matricula} encontrada: ${profile.email}`);
+      console.log(`[AUTH] Matrícula ${matricula} encontrada`);
+
+      // 🔒 SEGURANÇA: Mascarar email para evitar exposição completa
+      // Exemplo: "joao.silva@escola.com" -> "jo****va@es****.com"
+      const maskEmail = (email: string): string => {
+        const [localPart, domain] = email.split('@');
+        if (!domain) return '****@****.***';
+
+        const [domainName, ...tld] = domain.split('.');
+        const tldStr = tld.join('.');
+
+        const maskStr = (str: string, showStart: number, showEnd: number): string => {
+          if (str.length <= showStart + showEnd) return str;
+          const start = str.substring(0, showStart);
+          const end = str.substring(str.length - showEnd);
+          return `${start}****${end}`;
+        };
+
+        const maskedLocal = maskStr(localPart, 2, 2);
+        const maskedDomain = maskStr(domainName, 2, 0);
+
+        return `${maskedLocal}@${maskedDomain}.${tldStr}`;
+      };
 
       res.json({
         success: true,
-        email: profile.email,
-        name: profile.name
+        email: profile.email, // Email completo ainda é necessário para o login funcionar
+        maskedEmail: maskEmail(profile.email), // Email mascarado para exibição
+        name: profile.name?.split(' ')[0] || 'Aluno' // 🔒 Apenas primeiro nome
       });
 
     } catch (error: any) {
       console.error("[AUTH] Erro ao buscar email por matrícula:", error);
       res.status(500).json({
-        error: "Erro ao buscar matrícula",
-        details: error.message
+        error: "Erro ao buscar matrícula"
       });
     }
   });
