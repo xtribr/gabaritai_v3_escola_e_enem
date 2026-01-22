@@ -482,5 +482,63 @@ function generateBubbleCoordinates(): OMRBubble[] {
 //   - startY = 0.6857 (VALOR REAL MEDIDO - CORRIGIDO!)
 //   - rowHeight = 0.0204 (42.5px no screenshot)
 //   - bubbleSpacing = 0.0114 (20px no screenshot)
-// 
+//
 // ============================================================================
+
+// ============================================================================
+// 📬 SISTEMA DE MENSAGENS INTERNAS DO ADMIN
+// ============================================================================
+
+export const messageTargetTypeSchema = z.enum(['students', 'schools']);
+export type MessageTargetType = z.infer<typeof messageTargetTypeSchema>;
+
+// Schema para criar uma nova mensagem (input do SUPER_ADMIN)
+export const createAdminMessageSchema = z.object({
+  title: z.string().min(1, "Título é obrigatório").max(255, "Título muito longo"),
+  content: z.string().min(1, "Conteúdo é obrigatório"),
+  target_type: messageTargetTypeSchema,
+  filter_school_ids: z.array(z.string().uuid()).optional().nullable(),
+  filter_turmas: z.array(z.string()).optional().nullable(),
+  filter_series: z.array(z.string()).optional().nullable(),
+});
+
+export type CreateAdminMessage = z.infer<typeof createAdminMessageSchema>;
+
+// Schema para mensagem retornada pelo backend
+export const adminMessageSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  content: z.string(),
+  target_type: messageTargetTypeSchema,
+  filter_school_ids: z.array(z.string().uuid()).nullable(),
+  filter_turmas: z.array(z.string()).nullable(),
+  filter_series: z.array(z.string()).nullable(),
+  created_by: z.string().uuid(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  recipients_count: z.number().optional(),
+});
+
+export type AdminMessage = z.infer<typeof adminMessageSchema>;
+
+// Schema para mensagem recebida pelo destinatário
+export const receivedMessageSchema = z.object({
+  id: z.string().uuid(),
+  message_id: z.string().uuid(),
+  title: z.string(),
+  content: z.string(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  read_at: z.string().nullable(),
+  sender_name: z.string().optional(),
+});
+
+export type ReceivedMessage = z.infer<typeof receivedMessageSchema>;
+
+// Schema para resposta do inbox
+export const inboxResponseSchema = z.object({
+  messages: z.array(receivedMessageSchema),
+  unread_count: z.number(),
+});
+
+export type InboxResponse = z.infer<typeof inboxResponseSchema>;

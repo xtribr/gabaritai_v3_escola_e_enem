@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { NewMessagesModal } from '@/components/NewMessagesModal';
 import {
   Loader2, Users, FileText, BarChart2, School,
   TrendingUp, TrendingDown, Minus, Trophy, AlertTriangle,
@@ -557,6 +558,9 @@ export default function EscolaPage() {
   const [studentsListCategory, setStudentsListCategory] = useState<string>("");
   const [studentsListData, setStudentsListData] = useState<AlunoTri[]>([]);
   const [loadingStudentsList, setLoadingStudentsList] = useState(false);
+
+  // Messages modal state
+  const [showMessagesModal, setShowMessagesModal] = useState(true);
 
   // Fetch dashboard data
   const fetchDashboard = useCallback(async () => {
@@ -1999,6 +2003,17 @@ export default function EscolaPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Messages Modal */}
+      {showMessagesModal && (
+        <NewMessagesModal
+          onClose={() => setShowMessagesModal(false)}
+          onViewAll={() => {
+            setShowMessagesModal(false);
+            // O inbox está no navbar, então não precisa navegar
+          }}
+        />
+      )}
     </div>
   );
 }

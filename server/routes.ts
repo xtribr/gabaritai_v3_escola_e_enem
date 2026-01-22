@@ -8463,6 +8463,310 @@ Para cada disciplina:
   });
 
   // ============================================================
+  // ADMIN MESSAGES - Sistema de Mensagens Internas
+  // ============================================================
+
+  /**
+   * POST /api/admin/messages
+   * Cria uma nova mensagem e envia para os destinatários
+   * Apenas SUPER_ADMIN pode criar mensagens
+   */
+  app.post("/api/admin/messages", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { title, content, target_type, filter_school_ids, filter_turmas, filter_series } = req.body;
+
+      // Validações básicas
+      if (!title || !content || !target_type) {
+        return res.status(400).json({ error: "Campos obrigatórios: title, content, target_type" });
+      }
+
+      if (!['students', 'schools'].includes(target_type)) {
+        return res.status(400).json({ error: "target_type deve ser 'students' ou 'schools'" });
+      }
+
+      // Calcular data de expiração (7 dias)
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      // Criar mensagem
+      const { data: message, error: messageError } = await supabaseAdmin
+        .from('admin_messages')
+        .insert({
+          title,
+          content,
+          target_type,
+          filter_school_ids: filter_school_ids || null,
+          filter_turmas: filter_turmas || null,
+          filter_series: filter_series || null,
+          created_by: authReq.user.id,
+          expires_at: expiresAt.toISOString(),
+        })
+        .select()
+        .single();
+
+      if (messageError) {
+        console.error("[MESSAGES] Erro ao criar mensagem:", messageError);
+        return res.status(500).json({ error: "Erro ao criar mensagem" });
+      }
+
+      // Buscar destinatários baseado no target_type e filtros
+      let recipientsQuery = supabaseAdmin.from('profiles').select('id, school_id, turma');
+
+      if (target_type === 'students') {
+        recipientsQuery = recipientsQuery.eq('role', 'student');
+      } else {
+        recipientsQuery = recipientsQuery.eq('role', 'school_admin');
+      }
+
+      // Aplicar filtro de escolas
+      if (filter_school_ids && filter_school_ids.length > 0) {
+        recipientsQuery = recipientsQuery.in('school_id', filter_school_ids);
+      }
+
+      // Aplicar filtro de turmas (apenas para students)
+      if (target_type === 'students' && filter_turmas && filter_turmas.length > 0) {
+        recipientsQuery = recipientsQuery.in('turma', filter_turmas);
+      }
+
+      const { data: recipients, error: recipientsError } = await recipientsQuery;
+
+      if (recipientsError) {
+        console.error("[MESSAGES] Erro ao buscar destinatários:", recipientsError);
+        // Mensagem foi criada, mas sem destinatários
+        return res.status(500).json({ error: "Erro ao buscar destinatários" });
+      }
+
+      // Filtrar por séries se necessário (extrai série da turma, ex: "3A" -> "3")
+      let filteredRecipients = recipients || [];
+      if (target_type === 'students' && filter_series && filter_series.length > 0) {
+        filteredRecipients = filteredRecipients.filter(r => {
+          if (!r.turma) return false;
+          const serie = r.turma.charAt(0); // Assume formato "3A", "2B", etc.
+          return filter_series.includes(serie) || filter_series.includes(`${serie}º Ano`);
+        });
+      }
+
+      // Inserir registros de destinatários
+      if (filteredRecipients.length > 0) {
+        const recipientRecords = filteredRecipients.map(r => ({
+          message_id: message.id,
+          recipient_id: r.id,
+        }));
+
+        const { error: insertError } = await supabaseAdmin
+          .from('message_recipients')
+          .insert(recipientRecords);
+
+        if (insertError) {
+          console.error("[MESSAGES] Erro ao inserir destinatários:", insertError);
+        }
+      }
+
+      console.log(`[MESSAGES] Mensagem criada: ${message.id} para ${filteredRecipients.length} destinatários`);
+
+      res.json({
+        success: true,
+        id: message.id,
+        recipients_count: filteredRecipients.length,
+      });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao criar mensagem:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  /**
+   * GET /api/admin/messages
+   * Lista todas as mensagens enviadas pelo admin
+   * Apenas SUPER_ADMIN
+   */
+  app.get("/api/admin/messages", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      // Primeiro, limpar mensagens expiradas
+      await supabaseAdmin
+        .from('admin_messages')
+        .delete()
+        .lt('expires_at', new Date().toISOString());
+
+      // Buscar mensagens com contagem de destinatários
+      const { data: messages, error } = await supabaseAdmin
+        .from('admin_messages')
+        .select(`
+          *,
+          message_recipients(count)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("[MESSAGES] Erro ao listar mensagens:", error);
+        return res.status(500).json({ error: "Erro ao listar mensagens" });
+      }
+
+      // Formatar resposta
+      const formattedMessages = (messages || []).map(m => ({
+        ...m,
+        recipients_count: m.message_recipients?.[0]?.count || 0,
+        message_recipients: undefined,
+      }));
+
+      res.json({
+        messages: formattedMessages,
+        total: formattedMessages.length,
+      });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao listar mensagens:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/messages/:id
+   * Deleta uma mensagem (remove para todos os destinatários)
+   * Apenas SUPER_ADMIN
+   */
+  app.delete("/api/admin/messages/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const { error } = await supabaseAdmin
+        .from('admin_messages')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error("[MESSAGES] Erro ao deletar mensagem:", error);
+        return res.status(500).json({ error: "Erro ao deletar mensagem" });
+      }
+
+      console.log(`[MESSAGES] Mensagem deletada: ${id}`);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao deletar mensagem:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  /**
+   * GET /api/messages
+   * Busca mensagens do usuário logado (inbox)
+   * Qualquer usuário autenticado
+   */
+  app.get("/api/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+
+      // Limpar mensagens expiradas primeiro
+      await supabaseAdmin
+        .from('admin_messages')
+        .delete()
+        .lt('expires_at', new Date().toISOString());
+
+      // Buscar mensagens do usuário
+      const { data: recipientMessages, error } = await supabaseAdmin
+        .from('message_recipients')
+        .select(`
+          id,
+          read_at,
+          created_at,
+          admin_messages (
+            id,
+            title,
+            content,
+            created_at,
+            expires_at
+          )
+        `)
+        .eq('recipient_id', authReq.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("[MESSAGES] Erro ao buscar mensagens:", error);
+        return res.status(500).json({ error: "Erro ao buscar mensagens" });
+      }
+
+      // Formatar resposta
+      const messages = (recipientMessages || [])
+        .filter(rm => rm.admin_messages) // Filtrar mensagens que ainda existem
+        .map(rm => ({
+          id: rm.id,
+          message_id: (rm.admin_messages as any).id,
+          title: (rm.admin_messages as any).title,
+          content: (rm.admin_messages as any).content,
+          created_at: (rm.admin_messages as any).created_at,
+          expires_at: (rm.admin_messages as any).expires_at,
+          read_at: rm.read_at,
+        }));
+
+      const unread_count = messages.filter(m => !m.read_at).length;
+
+      res.json({
+        messages,
+        unread_count,
+      });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao buscar mensagens:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  /**
+   * PATCH /api/messages/:id/read
+   * Marca uma mensagem como lida
+   * Qualquer usuário autenticado
+   */
+  app.patch("/api/messages/:id/read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { id } = req.params;
+
+      const { error } = await supabaseAdmin
+        .from('message_recipients')
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('recipient_id', authReq.user.id);
+
+      if (error) {
+        console.error("[MESSAGES] Erro ao marcar como lida:", error);
+        return res.status(500).json({ error: "Erro ao marcar como lida" });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao marcar como lida:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  /**
+   * PATCH /api/messages/read-all
+   * Marca todas as mensagens do usuário como lidas
+   * Qualquer usuário autenticado
+   */
+  app.patch("/api/messages/read-all", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+
+      const { error } = await supabaseAdmin
+        .from('message_recipients')
+        .update({ read_at: new Date().toISOString() })
+        .eq('recipient_id', authReq.user.id)
+        .is('read_at', null);
+
+      if (error) {
+        console.error("[MESSAGES] Erro ao marcar todas como lidas:", error);
+        return res.status(500).json({ error: "Erro ao marcar todas como lidas" });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[MESSAGES] Erro ao marcar todas como lidas:", error);
+      res.status(500).json({ error: "Erro interno" });
+    }
+  });
+
+  // ============================================================
   // ANSWER SHEET BATCHES - Gabaritos com QR Code
   // ============================================================
 

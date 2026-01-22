@@ -130,6 +130,33 @@ export interface StudentListRelease {
   download_count: number;
 }
 
+// ============================================================================
+// Sistema de Mensagens Internas do Admin
+// ============================================================================
+
+export type MessageTargetType = 'students' | 'schools';
+
+export interface AdminMessage {
+  id: string;
+  title: string;
+  content: string;
+  target_type: MessageTargetType;
+  filter_school_ids: string[] | null;
+  filter_turmas: string[] | null;
+  filter_series: string[] | null;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface MessageRecipient {
+  id: string;
+  message_id: string;
+  recipient_id: string;
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {

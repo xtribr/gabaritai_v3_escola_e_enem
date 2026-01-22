@@ -2,6 +2,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/authFetch';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { NewMessagesModal } from '@/components/NewMessagesModal';
+import { useLocation } from 'wouter';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -651,6 +653,10 @@ export default function StudentDashboard() {
   const [wrongQuestionsModalOpen, setWrongQuestionsModalOpen] = useState(false);
   const [wrongQuestionsModalDifficulty, setWrongQuestionsModalDifficulty] = useState<'easy' | 'medium' | 'hard' | null>(null);
   const [wrongQuestionsForModal, setWrongQuestionsForModal] = useState<WrongQuestion[]>([]);
+
+  // Messages modal
+  const [showMessagesModal, setShowMessagesModal] = useState(true);
+  const [, navigate] = useLocation();
 
   const handleShowWrongQuestions = (difficulty: 'easy' | 'medium' | 'hard', questions: WrongQuestion[]) => {
     setWrongQuestionsModalDifficulty(difficulty);
@@ -1686,6 +1692,17 @@ export default function StudentDashboard() {
         difficulty={wrongQuestionsModalDifficulty}
         questions={wrongQuestionsForModal}
       />
+
+      {/* New Messages Modal */}
+      {showMessagesModal && (
+        <NewMessagesModal
+          onClose={() => setShowMessagesModal(false)}
+          onViewAll={() => {
+            setShowMessagesModal(false);
+            // O inbox está no navbar, então não precisa navegar
+          }}
+        />
+      )}
     </div>
   );
 }

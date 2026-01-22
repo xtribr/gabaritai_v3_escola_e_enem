@@ -18,11 +18,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, KeyRound, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Printer, FileText, Building2, ClipboardList, Plus, Edit2 } from 'lucide-react';
+import { LogOut, Users, GraduationCap, Settings, ArrowLeft, Download, Loader2, CheckCircle2, XCircle, AlertCircle, Search, RefreshCw, KeyRound, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Printer, FileText, Building2, ClipboardList, Plus, Edit2, Mail, Send } from 'lucide-react';
 import TrashIcon from '@/components/ui/trash-icon';
 import { Link } from 'wouter';
 import { CsvUploader, StudentRow } from '@/components/CsvUploader';
 import { ProfileMenu } from '@/components/ProfileMenu';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import ReactMarkdown from 'react-markdown';
 
 interface ImportResult {
   matricula: string;
@@ -192,6 +197,33 @@ export default function AdminPage() {
   const [showResetAllModal, setShowResetAllModal] = useState(false);
   const [isResetAllLoading, setIsResetAllLoading] = useState(false);
   const [resetAllResults, setResetAllResults] = useState<{ reset: number; created: number; errors: number } | null>(null);
+
+  // Admin Messages states
+  interface AdminMessage {
+    id: string;
+    title: string;
+    content: string;
+    target_type: 'students' | 'schools';
+    filter_school_ids: string[] | null;
+    filter_turmas: string[] | null;
+    filter_series: string[] | null;
+    created_at: string;
+    expires_at: string;
+    recipients_count?: number;
+  }
+  const [adminMessages, setAdminMessages] = useState<AdminMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [messageForm, setMessageForm] = useState({
+    title: '',
+    content: '',
+    target_type: 'students' as 'students' | 'schools',
+    filter_school_ids: [] as string[],
+    filter_turmas: [] as string[],
+    filter_series: [] as string[],
+  });
+  const [showMessagePreview, setShowMessagePreview] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState<AdminMessage | null>(null);
 
   const isSuperAdmin = profile?.role === 'super_admin';
 
@@ -634,6 +666,88 @@ export default function AdminPage() {
     }
   }, []);
 
+  // Fetch admin messages
+  const fetchAdminMessages = useCallback(async () => {
+    setIsLoadingMessages(true);
+    try {
+      const response = await authFetch('/api/admin/messages');
+      const data = await response.json();
+      if (data.messages) {
+        setAdminMessages(data.messages);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar mensagens:', error);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, []);
+
+  // Send admin message
+  const handleSendMessage = async () => {
+    if (!messageForm.title.trim() || !messageForm.content.trim()) {
+      alert('Preencha título e conteúdo da mensagem');
+      return;
+    }
+
+    setIsSendingMessage(true);
+    try {
+      const response = await authFetch('/api/admin/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: messageForm.title,
+          content: messageForm.content,
+          target_type: messageForm.target_type,
+          filter_school_ids: messageForm.filter_school_ids.length > 0 ? messageForm.filter_school_ids : null,
+          filter_turmas: messageForm.filter_turmas.length > 0 ? messageForm.filter_turmas : null,
+          filter_series: messageForm.filter_series.length > 0 ? messageForm.filter_series : null,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(`Mensagem enviada para ${data.recipients_count} destinatário(s)!`);
+        setMessageForm({
+          title: '',
+          content: '',
+          target_type: 'students',
+          filter_school_ids: [],
+          filter_turmas: [],
+          filter_series: [],
+        });
+        setShowMessagePreview(false);
+        fetchAdminMessages();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      alert('Erro ao enviar mensagem');
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  // Delete admin message
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const response = await authFetch(`/api/admin/messages/${messageId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchAdminMessages();
+        setMessageToDelete(null);
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Erro ao deletar mensagem:', error);
+      alert('Erro ao deletar mensagem');
+    }
+  };
+
   // Save coordinator (create/update)
   const handleSaveCoordinator = async () => {
     setIsActionLoading(true);
@@ -812,6 +926,14 @@ export default function AdminPage() {
       fetchSchools();
     }
   }, [activeTab, fetchCoordinators, fetchSchools]);
+
+  // Fetch messages when tab is selected
+  useEffect(() => {
+    if (activeTab === 'mensagens') {
+      fetchAdminMessages();
+      fetchSchools(); // Para os filtros
+    }
+  }, [activeTab, fetchAdminMessages, fetchSchools]);
 
   const handleCsvDataReady = (data: StudentRow[]) => {
     setPendingStudents(data);
@@ -1335,7 +1457,7 @@ export default function AdminPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-4 max-w-lg">
             <TabsTrigger value="escolas" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Escolas
@@ -1343,6 +1465,10 @@ export default function AdminPage() {
             <TabsTrigger value="coordenadores" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Coordenadores
+            </TabsTrigger>
+            <TabsTrigger value="mensagens" className="flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Mensagens
             </TabsTrigger>
             <TabsTrigger value="configuracoes" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
@@ -1573,6 +1699,246 @@ export default function AdminPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Tab de Mensagens */}
+          <TabsContent value="mensagens" className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Formulário de Nova Mensagem */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Send className="h-5 w-5" />
+                    Nova Mensagem
+                  </CardTitle>
+                  <CardDescription>
+                    Envie mensagens para alunos ou coordenadores de escolas
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Tipo de Destinatário */}
+                  <div className="space-y-2">
+                    <Label>Destinatários</Label>
+                    <Select
+                      value={messageForm.target_type}
+                      onValueChange={(value: 'students' | 'schools') =>
+                        setMessageForm(prev => ({ ...prev, target_type: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="students">
+                          <span className="flex items-center gap-2">
+                            <GraduationCap className="h-4 w-4" />
+                            Alunos
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="schools">
+                          <span className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4" />
+                            Coordenadores de Escolas
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Filtro de Escolas */}
+                  <div className="space-y-2">
+                    <Label>Filtrar por Escolas (opcional)</Label>
+                    <div className="border rounded-md p-3 max-h-32 overflow-y-auto space-y-2">
+                      {schools.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Carregando escolas...</p>
+                      ) : (
+                        schools.map(school => (
+                          <div key={school.id} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`school-${school.id}`}
+                              checked={messageForm.filter_school_ids.includes(school.id)}
+                              onCheckedChange={(checked) => {
+                                setMessageForm(prev => ({
+                                  ...prev,
+                                  filter_school_ids: checked
+                                    ? [...prev.filter_school_ids, school.id]
+                                    : prev.filter_school_ids.filter(id => id !== school.id)
+                                }));
+                              }}
+                            />
+                            <label htmlFor={`school-${school.id}`} className="text-sm cursor-pointer">
+                              {school.name}
+                            </label>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {messageForm.filter_school_ids.length === 0 && (
+                      <p className="text-xs text-muted-foreground">Nenhuma selecionada = todas as escolas</p>
+                    )}
+                  </div>
+
+                  {/* Filtro de Séries (apenas para alunos) */}
+                  {messageForm.target_type === 'students' && (
+                    <div className="space-y-2">
+                      <Label>Filtrar por Série (opcional)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {['1', '2', '3'].map(serie => (
+                          <div key={serie} className="flex items-center gap-1">
+                            <Checkbox
+                              id={`serie-${serie}`}
+                              checked={messageForm.filter_series.includes(serie)}
+                              onCheckedChange={(checked) => {
+                                setMessageForm(prev => ({
+                                  ...prev,
+                                  filter_series: checked
+                                    ? [...prev.filter_series, serie]
+                                    : prev.filter_series.filter(s => s !== serie)
+                                }));
+                              }}
+                            />
+                            <label htmlFor={`serie-${serie}`} className="text-sm cursor-pointer">
+                              {serie}º Ano
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Título */}
+                  <div className="space-y-2">
+                    <Label htmlFor="message-title">Título *</Label>
+                    <Input
+                      id="message-title"
+                      placeholder="Ex: Aviso importante sobre o simulado"
+                      value={messageForm.title}
+                      onChange={(e) => setMessageForm(prev => ({ ...prev, title: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Conteúdo */}
+                  <div className="space-y-2">
+                    <Label htmlFor="message-content">Conteúdo * (suporta Markdown)</Label>
+                    <Textarea
+                      id="message-content"
+                      placeholder="Digite sua mensagem aqui...
+
+Você pode usar:
+**negrito**, *itálico*, [links](url)
+- listas
+- com itens"
+                      value={messageForm.content}
+                      onChange={(e) => setMessageForm(prev => ({ ...prev, content: e.target.value }))}
+                      rows={6}
+                    />
+                  </div>
+
+                  {/* Botões */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMessagePreview(true)}
+                      disabled={!messageForm.title || !messageForm.content}
+                    >
+                      Pré-visualizar
+                    </Button>
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={isSendingMessage || !messageForm.title || !messageForm.content}
+                    >
+                      {isSendingMessage ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-2" />
+                          Enviar Mensagem
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Histórico de Mensagens */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Mail className="h-5 w-5" />
+                        Mensagens Enviadas
+                      </CardTitle>
+                      <CardDescription>
+                        Mensagens expiram automaticamente após 7 dias
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={fetchAdminMessages} disabled={isLoadingMessages}>
+                      <RefreshCw className={`h-4 w-4 ${isLoadingMessages ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingMessages ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : adminMessages.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Mail className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Nenhuma mensagem enviada</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[400px]">
+                      <div className="space-y-3">
+                        {adminMessages.map(message => (
+                          <div
+                            key={message.id}
+                            className="border rounded-lg p-3 space-y-2 hover:bg-muted/50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm truncate">{message.title}</h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="outline" className="text-xs">
+                                    {message.target_type === 'students' ? 'Alunos' : 'Escolas'}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {message.recipients_count || 0} destinatário(s)
+                                  </span>
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setMessageToDelete(message)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {message.content.replace(/[#*_`]/g, '').substring(0, 100)}...
+                            </p>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>
+                                Enviada: {new Date(message.created_at).toLocaleDateString('pt-BR')}
+                              </span>
+                              <span>
+                                Expira: {new Date(message.expires_at).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="configuracoes" className="space-y-6">
@@ -2288,6 +2654,78 @@ export default function AdminPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Preview da Mensagem */}
+      <Dialog open={showMessagePreview} onOpenChange={setShowMessagePreview}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Pré-visualização da Mensagem
+            </DialogTitle>
+            <DialogDescription>
+              Assim sua mensagem aparecerá para os destinatários
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-4">
+            <div className="border rounded-lg p-4 bg-muted/30">
+              <h3 className="font-semibold text-lg">{messageForm.title}</h3>
+              <div className="mt-3 prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown>{messageForm.content}</ReactMarkdown>
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p><strong>Destinatários:</strong> {messageForm.target_type === 'students' ? 'Alunos' : 'Coordenadores'}</p>
+              {messageForm.filter_school_ids.length > 0 && (
+                <p><strong>Escolas:</strong> {messageForm.filter_school_ids.length} selecionada(s)</p>
+              )}
+              {messageForm.filter_series.length > 0 && (
+                <p><strong>Séries:</strong> {messageForm.filter_series.join(', ')}º Ano</p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="outline" onClick={() => setShowMessagePreview(false)}>
+              Editar
+            </Button>
+            <Button onClick={() => { setShowMessagePreview(false); handleSendMessage(); }} disabled={isSendingMessage}>
+              {isSendingMessage ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Enviar
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog de Confirmar Delete de Mensagem */}
+      <AlertDialog open={!!messageToDelete} onOpenChange={(open) => !open && setMessageToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Mensagem</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a mensagem "{messageToDelete?.title}"?
+              Esta ação não pode ser desfeita e a mensagem será removida para todos os destinatários.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => messageToDelete && handleDeleteMessage(messageToDelete.id)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
