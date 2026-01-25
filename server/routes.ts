@@ -3037,24 +3037,16 @@ Para cada disciplina:
       // GAB-203: Aceitar school_id ou schoolId, com fallback para escola do usuário logado
       let finalSchoolId = school_id || schoolId;
 
-      // Se não tiver school_id, usar a escola do perfil do usuário logado
+      // Se não tiver school_id, usar a escola do perfil do usuário logado (já carregado pelo middleware requireRole)
       if (!finalSchoolId) {
-        const userId = (req as any).user?.id;
-        if (userId) {
-          const { data: userProfile } = await supabaseAdmin
-            .from("profiles")
-            .select("school_id")
-            .eq("id", userId)
-            .single();
-
-          if (userProfile?.school_id) {
-            finalSchoolId = userProfile.school_id;
-            console.log(`[AVALIACOES] Usando escola do usuário logado: ${finalSchoolId}`);
-          }
+        const authReq = req as any;
+        if (authReq.profile?.school_id) {
+          finalSchoolId = authReq.profile.school_id;
+          console.log(`[AVALIACOES] Usando escola do perfil do usuário: ${finalSchoolId}`);
         }
       }
 
-      // Fallback final: buscar/criar escola padrão demo (apenas se não conseguir determinar escola)
+      // Fallback final: buscar/criar escola padrão demo (apenas para super_admin sem escola)
       if (!finalSchoolId) {
         const { data: defaultSchool } = await supabaseAdmin
           .from("schools")
