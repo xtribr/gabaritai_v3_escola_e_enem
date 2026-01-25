@@ -3034,10 +3034,27 @@ Para cada disciplina:
         return res.status(400).json({ error: "Lista de alunos é obrigatória" });
       }
 
-      // GAB-203: Aceitar school_id ou schoolId, com fallback para escola padrão
+      // GAB-203: Aceitar school_id ou schoolId, com fallback para escola do usuário logado
       let finalSchoolId = school_id || schoolId;
 
-      // Se não tiver school_id, buscar/criar escola padrão
+      // Se não tiver school_id, usar a escola do perfil do usuário logado
+      if (!finalSchoolId) {
+        const userId = (req as any).user?.id;
+        if (userId) {
+          const { data: userProfile } = await supabaseAdmin
+            .from("profiles")
+            .select("school_id")
+            .eq("id", userId)
+            .single();
+
+          if (userProfile?.school_id) {
+            finalSchoolId = userProfile.school_id;
+            console.log(`[AVALIACOES] Usando escola do usuário logado: ${finalSchoolId}`);
+          }
+        }
+      }
+
+      // Fallback final: buscar/criar escola padrão demo (apenas se não conseguir determinar escola)
       if (!finalSchoolId) {
         const { data: defaultSchool } = await supabaseAdmin
           .from("schools")
@@ -3047,7 +3064,7 @@ Para cada disciplina:
 
         if (defaultSchool) {
           finalSchoolId = defaultSchool.id;
-          console.log(`[AVALIACOES] Usando escola padrão: ${finalSchoolId}`);
+          console.log(`[AVALIACOES] Usando escola padrão demo: ${finalSchoolId}`);
         } else {
           // Criar escola demo se não existir
           const { data: newSchool, error: schoolError } = await supabaseAdmin
