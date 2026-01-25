@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { authFetch } from '@/lib/authFetch';
 
 interface ChangePasswordModalProps {
   open: boolean;
@@ -60,7 +61,7 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/profile/change-password', {
+      const response = await authFetch('/api/profile/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

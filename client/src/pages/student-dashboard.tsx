@@ -783,7 +783,7 @@ export default function StudentDashboard() {
 
     try {
       // Use backend endpoint instead of client-side Supabase
-      const response = await fetch('/api/profile/change-password', {
+      const response = await authFetch('/api/profile/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
