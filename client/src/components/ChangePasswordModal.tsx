@@ -11,11 +11,12 @@ interface ChangePasswordModalProps {
   open: boolean;
   onClose?: () => void;
   onSuccess: () => void;
-  isForced?: boolean; // Se true, não pode fechar o modal
+  isForced?: boolean; // Se true, não requer senha atual
+  isFirstLogin?: boolean; // Se true, mostra sugestão (pode pular)
   userId: string;
 }
 
-export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false, userId }: ChangePasswordModalProps) {
+export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false, isFirstLogin = false, userId }: ChangePasswordModalProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -91,18 +92,24 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
     }
   };
 
+  // Allow closing if not strictly forced (isFirstLogin allows skip)
+  const canClose = !isForced || isFirstLogin;
+
   return (
-    <Dialog open={open} onOpenChange={isForced ? undefined : onClose}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={isForced ? (e) => e.preventDefault() : undefined}>
+    <Dialog open={open} onOpenChange={canClose ? onClose : undefined}>
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={canClose ? undefined : (e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5" />
-            {isForced ? 'Alterar Senha Obrigatório' : 'Alterar Senha'}
+            {isFirstLogin ? 'Alterar Senha' : (isForced ? 'Alterar Senha Obrigatório' : 'Alterar Senha')}
           </DialogTitle>
           <DialogDescription>
-            {isForced
-              ? 'Por segurança, você precisa alterar sua senha no primeiro acesso.'
-              : 'Digite sua senha atual e escolha uma nova senha.'
+            {isFirstLogin
+              ? 'Recomendamos alterar sua senha padrão. Você pode pular e fazer isso depois no menu do perfil.'
+              : (isForced
+                ? 'Por segurança, você precisa alterar sua senha no primeiro acesso.'
+                : 'Digite sua senha atual e escolha uma nova senha.'
+              )
             }
           </DialogDescription>
         </DialogHeader>
@@ -187,9 +194,9 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
           </div>
 
           <div className="flex justify-end gap-2 pt-4">
-            {!isForced && (
+            {canClose && (
               <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-                Cancelar
+                {isFirstLogin ? 'Pular por agora' : 'Cancelar'}
               </Button>
             )}
             <Button type="submit" disabled={isLoading}>

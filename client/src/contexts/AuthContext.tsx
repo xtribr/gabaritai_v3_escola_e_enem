@@ -206,12 +206,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isStudent,
     }}>
       {children}
-      {/* Modal de troca de senha obrigatória */}
+      {/* Modal de sugestão de troca de senha (opcional - pode pular) */}
       {profile && showForceChangePassword && (
         <ChangePasswordModal
           open={showForceChangePassword}
+          onClose={() => setShowForceChangePassword(false)}
           onSuccess={handleForcePasswordChangeSuccess}
           isForced={true}
+          isFirstLogin={true}
           userId={profile.id}
         />
       )}
