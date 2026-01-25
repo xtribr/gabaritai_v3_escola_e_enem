@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { NewMessagesModal } from '@/components/NewMessagesModal';
 import {
@@ -120,6 +121,8 @@ interface ContentStat {
   totalAttempts: number;
   totalErrors: number;
   errorPercentage: number;
+  areas?: string[];
+  questionNumbers?: number[];
 }
 
 interface QuestionStatsData {
@@ -1888,29 +1891,71 @@ export default function EscolaPage() {
                   </div>
                 ) : questionStatsData?.questionStats && questionStatsData.questionStats.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
-                    {questionStatsData.questionStats.map((q) => {
-                      const percentage = q.correctPercentage;
-                      const bgColor = percentage >= 70 ? 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700'
-                        : percentage >= 50 ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700'
-                        : 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
-                      const textColor = percentage >= 70 ? 'text-green-700 dark:text-green-400'
-                        : percentage >= 50 ? 'text-yellow-700 dark:text-yellow-400'
-                        : 'text-red-700 dark:text-red-400';
+                    <TooltipProvider>
+                      {questionStatsData.questionStats.map((q) => {
+                        const percentage = q.correctPercentage;
+                        const bgColor = percentage >= 70 ? 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700'
+                          : percentage >= 50 ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700'
+                          : 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
+                        const textColor = percentage >= 70 ? 'text-green-700 dark:text-green-400'
+                          : percentage >= 50 ? 'text-yellow-700 dark:text-yellow-400'
+                          : 'text-red-700 dark:text-red-400';
+                        const difficulty = percentage >= 70 ? 'Fácil' : percentage >= 40 ? 'Médio' : 'Difícil';
+                        const difficultyColor = percentage >= 70 ? 'text-green-600' : percentage >= 40 ? 'text-yellow-600' : 'text-red-600';
 
-                      return (
-                        <div
-                          key={q.questionNumber}
-                          className={`rounded-xl border-2 p-3 ${bgColor} transition-transform hover:scale-105`}
-                          title={q.content || `Questão ${q.questionNumber}`}
-                        >
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Q{q.questionNumber}</p>
-                          <p className={`text-2xl font-bold ${textColor}`}>{percentage}%</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate" title={q.content}>
-                            {q.content || '-'}
-                          </p>
-                        </div>
-                      );
-                    })}
+                        return (
+                          <Tooltip key={q.questionNumber}>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={`rounded-xl border-2 p-3 ${bgColor} transition-transform hover:scale-105 cursor-help`}
+                              >
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Q{q.questionNumber}</p>
+                                <p className={`text-2xl font-bold ${textColor}`}>{percentage}%</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                  {q.content || '-'}
+                                </p>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs p-3 bg-white dark:bg-gray-800 shadow-lg" side="top">
+                              <p className="font-bold mb-1">Questão {q.questionNumber} - Gabarito: {q.correctAnswer}</p>
+                              {q.content && (
+                                <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">{q.content}</p>
+                              )}
+                              <p className="text-sm mb-2">
+                                <span className={`font-medium ${difficultyColor}`}>{difficulty}</span>
+                                {' • '}{q.correctCount}/{questionStatsData.totalStudents} acertos ({percentage}%)
+                              </p>
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Distribuição:</p>
+                                {['A', 'B', 'C', 'D', 'E'].map(letra => {
+                                  const count = q.distribution?.[letra] || 0;
+                                  const percent = questionStatsData.totalStudents > 0 ? (count / questionStatsData.totalStudents) * 100 : 0;
+                                  const isCorrect = letra === q.correctAnswer;
+                                  return (
+                                    <div key={letra} className="flex items-center gap-2 text-xs">
+                                      <span className={`w-4 font-bold ${isCorrect ? 'text-green-600' : 'text-gray-600 dark:text-gray-400'}`}>{letra}:</span>
+                                      <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
+                                        <div
+                                          className={`h-full ${isCorrect ? 'bg-green-500' : 'bg-gray-400'}`}
+                                          style={{ width: `${percent}%` }}
+                                        />
+                                      </div>
+                                      <span className="w-16 text-right text-gray-600 dark:text-gray-400">{count} ({percent.toFixed(0)}%)</span>
+                                    </div>
+                                  );
+                                })}
+                                {(q.blankCount || 0) > 0 && (
+                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <span className="w-4">?:</span>
+                                    <span>{q.blankCount} em branco ({((q.blankCount || 0) / questionStatsData.totalStudents * 100).toFixed(0)}%)</span>
+                                  </div>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </TooltipProvider>
                   </div>
                 ) : (
                   <p className="text-center text-gray-500 py-8">Nenhum dado disponível</p>
@@ -1918,7 +1963,7 @@ export default function EscolaPage() {
               </div>
             </div>
 
-            {/* Análise por Conteúdo - Conteúdos com Mais Erros */}
+            {/* Análise por Conteúdo - Conteúdos com Mais Erros por Área */}
             <div className="rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-lg overflow-hidden">
               <div className="p-6">
                 <div className="flex items-center gap-2 mb-6">
@@ -1927,7 +1972,7 @@ export default function EscolaPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">Conteúdos com Mais Erros</h3>
-                    <p className="text-xs text-gray-500">Áreas que precisam de mais atenção</p>
+                    <p className="text-xs text-gray-500">Áreas que precisam de mais atenção por disciplina</p>
                   </div>
                 </div>
 
@@ -1936,37 +1981,72 @@ export default function EscolaPage() {
                     <Loader2 className="h-8 w-8 animate-spin text-[#33B5E5]" />
                   </div>
                 ) : questionStatsData?.contentStats && questionStatsData.contentStats.length > 0 ? (
-                  <div className="space-y-3">
-                    {questionStatsData.contentStats.slice(0, 10).map((content, index) => {
-                      const barColor = content.errorPercentage >= 50 ? 'bg-red-500'
-                        : content.errorPercentage >= 30 ? 'bg-orange-500'
-                        : 'bg-yellow-500';
+                  <Tabs defaultValue="all" className="w-full">
+                    <TabsList className="grid grid-cols-5 w-full mb-4">
+                      <TabsTrigger value="all" className="text-xs">Todos</TabsTrigger>
+                      <TabsTrigger value="LC" className="text-xs">LC (Q1-45)</TabsTrigger>
+                      <TabsTrigger value="CH" className="text-xs">CH (Q46-90)</TabsTrigger>
+                      <TabsTrigger value="CN" className="text-xs">CN (Q91-135)</TabsTrigger>
+                      <TabsTrigger value="MT" className="text-xs">MT (Q136-180)</TabsTrigger>
+                    </TabsList>
+                    {['all', 'LC', 'CH', 'CN', 'MT'].map(area => (
+                      <TabsContent key={area} value={area} className="space-y-3">
+                        {questionStatsData.contentStats
+                          .filter(content =>
+                            area === 'all' || (content.areas && content.areas.includes(area))
+                          )
+                          .slice(0, 10)
+                          .map((content, index) => {
+                            const barColor = content.errorPercentage >= 50 ? 'bg-red-500'
+                              : content.errorPercentage >= 30 ? 'bg-orange-500'
+                              : 'bg-yellow-500';
 
-                      return (
-                        <div key={index} className="flex items-center gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={content.content}>
-                                {content.content}
-                              </p>
-                              <span className="text-sm font-bold text-gray-900 dark:text-white ml-2">
-                                {content.errorPercentage.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${barColor} rounded-full transition-all duration-500`}
-                                style={{ width: `${Math.min(content.errorPercentage, 100)}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {content.totalQuestions} questões • {content.totalErrors} erros de {content.totalAttempts} respostas
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            return (
+                              <div key={index} className="flex items-center gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={content.content}>
+                                        {content.content}
+                                      </p>
+                                      {content.areas && content.areas.length > 0 && area === 'all' && (
+                                        <div className="flex gap-1">
+                                          {content.areas.map(a => (
+                                            <Badge key={a} variant="outline" className="text-[10px] px-1 py-0">
+                                              {a}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span className="text-sm font-bold text-gray-900 dark:text-white ml-2">
+                                      {content.errorPercentage.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                                      style={{ width: `${Math.min(content.errorPercentage, 100)}%` }}
+                                    />
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {content.totalQuestions} questões • {content.totalErrors} erros de {content.totalAttempts} respostas
+                                    {content.questionNumbers && content.questionNumbers.length > 0 && (
+                                      <span className="ml-1">(Q{content.questionNumbers.slice(0, 5).join(', Q')}{content.questionNumbers.length > 5 ? '...' : ''})</span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {questionStatsData.contentStats.filter(content =>
+                          area === 'all' || (content.areas && content.areas.includes(area))
+                        ).length === 0 && (
+                          <p className="text-center text-gray-500 py-4">Nenhum conteúdo com erros nesta área</p>
+                        )}
+                      </TabsContent>
+                    ))}
+                  </Tabs>
                 ) : (
                   <p className="text-center text-gray-500 py-8">Nenhum dado de conteúdo disponível</p>
                 )}

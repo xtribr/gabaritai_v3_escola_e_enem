@@ -6841,12 +6841,33 @@ Para cada disciplina:
         blankCount: number;
       }> = [];
 
+      // Criar mapa de questionNumber -> content para busca correta
+      const contentByQuestionNumber = new Map<number, string>();
+      questionContents.forEach((item: any, idx: number) => {
+        if (typeof item === 'string') {
+          // Se é string, usar índice + 1 como questionNumber
+          contentByQuestionNumber.set(idx + 1, item);
+        } else if (item && typeof item === 'object') {
+          // Se é objeto, usar questionNumber do objeto ou índice + 1
+          const qNum = item.questionNumber || (idx + 1);
+          contentByQuestionNumber.set(qNum, item.content || '');
+        }
+      });
+
+      // Helper para determinar área baseado no número da questão (ENEM)
+      const getAreaForQuestion = (qNum: number): string => {
+        if (qNum >= 1 && qNum <= 45) return 'LC';
+        if (qNum >= 46 && qNum <= 90) return 'CH';
+        if (qNum >= 91 && qNum <= 135) return 'CN';
+        if (qNum >= 136 && qNum <= 180) return 'MT';
+        return 'OUTRO';
+      };
+
       for (let i = 0; i < answerKey.length; i++) {
         const questionNumber = i + 1;
         const correctAnswer = (answerKey[i] || '').toUpperCase();
-        // Buscar content pelo índice (questionContents está alinhado com answerKey)
-        const rawContent = questionContents[i];
-        const content = typeof rawContent === 'string' ? rawContent : (rawContent?.content || '');
+        // Buscar content pelo questionNumber (não pelo índice)
+        const content = contentByQuestionNumber.get(questionNumber) || '';
         let correctCount = 0;
         let blankCount = 0;
         const distribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
@@ -6879,14 +6900,25 @@ Para cada disciplina:
         });
       }
 
-      // 4. Calcular estatísticas por conteúdo
-      const contentMap = new Map<string, { total: number; errors: number; questions: number; attempts: number }>();
+      // 4. Calcular estatísticas por conteúdo com agrupamento por área
+      const contentMap = new Map<string, {
+        total: number;
+        errors: number;
+        questions: number;
+        attempts: number;
+        areas: Set<string>;
+        questionNumbers: number[];
+      }>();
 
       questionStats.forEach((stat) => {
         const contentStr = typeof stat.content === 'string' ? stat.content : '';
         if (contentStr && contentStr.trim()) {
           const content = contentStr.trim();
-          const existing = contentMap.get(content) || { total: 0, errors: 0, questions: 0, attempts: 0 };
+          const existing = contentMap.get(content) || {
+            total: 0, errors: 0, questions: 0, attempts: 0,
+            areas: new Set<string>(),
+            questionNumbers: []
+          };
           const respondentes = totalStudents - stat.blankCount;
           const errors = respondentes - stat.correctCount;
 
@@ -6894,6 +6926,8 @@ Para cada disciplina:
           existing.attempts += respondentes;
           existing.errors += errors;
           existing.total += respondentes;
+          existing.areas.add(getAreaForQuestion(stat.questionNumber));
+          existing.questionNumbers.push(stat.questionNumber);
 
           contentMap.set(content, existing);
         }
@@ -6906,6 +6940,8 @@ Para cada disciplina:
           totalAttempts: data.attempts,
           totalErrors: data.errors,
           errorPercentage: data.total > 0 ? Math.round((data.errors / data.total) * 100 * 10) / 10 : 0,
+          areas: Array.from(data.areas),
+          questionNumbers: data.questionNumbers.sort((a, b) => a - b),
         }))
         .sort((a, b) => b.errorPercentage - a.errorPercentage);
 
