@@ -37,6 +37,89 @@ import {
   type StudentAnswerSupabase
 } from "@shared/transforms";
 
+// ===========================================================================
+// HELPER: Flatten projetos.students[] to format compatible with escola routes
+// ===========================================================================
+
+interface FlattenedStudent {
+  id: string;
+  student_name: string;
+  student_number: string | null;
+  turma: string | null;
+  correct_answers: number;
+  wrong_answers: number;
+  tri_lc: number | null;
+  tri_ch: number | null;
+  tri_cn: number | null;
+  tri_mt: number | null;
+  tri_geral: number | null;
+  created_at: string;
+  projeto_nome: string;
+}
+
+/**
+ * Transforms projetos.students[] + tri_scores_by_area into format compatible with
+ * the existing escola routes that previously read from student_answers.
+ */
+function flattenProjetosStudents(
+  projetos: any[],
+  schoolId: string | null,
+  allowedSeries: string[] | null
+): FlattenedStudent[] {
+  const flattened: FlattenedStudent[] = [];
+
+  for (const projeto of projetos) {
+    // Skip projetos that don't match schoolId (if filtering)
+    if (schoolId && projeto.school_id && projeto.school_id !== schoolId) {
+      continue;
+    }
+
+    const students = (projeto.students as any[]) || [];
+    const triScoresByArea = (projeto.tri_scores_by_area as Record<string, any>) || {};
+
+    for (const student of students) {
+      // Get TRI scores for this student (by ID)
+      const studentTriScores = triScoresByArea[student.id] || {};
+
+      // Extract area scores from student or from triScoresByArea
+      const tri_lc = studentTriScores.LC ?? studentTriScores.lc ?? student.areaScores?.LC ?? student.areaScores?.lc ?? null;
+      const tri_ch = studentTriScores.CH ?? studentTriScores.ch ?? student.areaScores?.CH ?? student.areaScores?.ch ?? null;
+      const tri_cn = studentTriScores.CN ?? studentTriScores.cn ?? student.areaScores?.CN ?? student.areaScores?.cn ?? null;
+      const tri_mt = studentTriScores.MT ?? studentTriScores.mt ?? student.areaScores?.MT ?? student.areaScores?.mt ?? null;
+
+      // Calculate triGeral (média das 4 áreas)
+      const triValues = [tri_lc, tri_ch, tri_cn, tri_mt].filter(v => v != null) as number[];
+      const tri_geral = triValues.length > 0 ? triValues.reduce((a, b) => a + b, 0) / triValues.length : null;
+
+      // Extract turma from student
+      const turma = student.turma || null;
+
+      // Filter by allowed series if provided
+      if (!isTurmaAllowed(turma, allowedSeries)) {
+        continue;
+      }
+
+      flattened.push({
+        id: student.id,
+        student_name: student.studentName || student.nome || `Aluno ${student.id}`,
+        student_number: student.studentNumber || student.matricula || null,
+        turma,
+        correct_answers: student.correctAnswers ?? 0,
+        wrong_answers: student.wrongAnswers ?? 0,
+        tri_lc,
+        tri_ch,
+        tri_cn,
+        tri_mt,
+        tri_geral,
+        created_at: projeto.updated_at || projeto.created_at || new Date().toISOString(),
+        projeto_nome: projeto.nome || "Projeto sem nome",
+      });
+    }
+  }
+
+  return flattened;
+}
+
 // Configuração dos serviços Python
 // Modal.com - ASGI app com FastAPI
 const USE_MODAL = process.env.USE_MODAL === "true";
@@ -6434,6 +6517,7 @@ Para cada disciplina:
 
   // GET /api/escola/results - Buscar resultados dos alunos da escola
   // PROTEGIDO: Apenas school_admin e super_admin podem ver resultados
+  // MIGRADO: Agora lê de projetos em vez de student_answers
   app.get("/api/escola/results", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const profile = (req as any).profile;
@@ -6441,60 +6525,42 @@ Para cada disciplina:
       const schoolId = profile?.school_id;
       console.log(`[ESCOLA RESULTS] User: ${profile?.name}, School: ${schoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
-      // Buscar student_answers com info do exame (filtrado por escola para school_admin)
-      let answersQuery = supabaseAdmin
-        .from("student_answers")
-        .select(`
-          id,
-          student_name,
-          student_number,
-          turma,
-          score,
-          correct_answers,
-          wrong_answers,
-          blank_answers,
-          tri_lc,
-          tri_ch,
-          tri_cn,
-          tri_mt,
-          created_at,
-          exams(title)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(500);
+      // Buscar projetos (fonte oficial de dados corrigidos)
+      let projetosQuery = supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
+        .order("updated_at", { ascending: false });
 
-      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      // Filtrar por school_id se for school_admin
       if (profile?.role === 'school_admin' && schoolId) {
-        answersQuery = answersQuery.eq('school_id', schoolId);
+        projetosQuery = projetosQuery.eq('school_id', schoolId);
       }
 
-      const { data: answers, error: answersError } = await answersQuery;
+      const { data: projetos, error: projetosError } = await projetosQuery;
 
-      if (answersError) {
-        console.error("[ESCOLA] Erro ao buscar resultados:", answersError);
-        return res.status(500).json({ error: answersError.message });
+      if (projetosError) {
+        console.error("[ESCOLA RESULTS] Erro ao buscar projetos:", projetosError);
+        return res.status(500).json({ error: projetosError.message });
       }
 
-      // Filter by allowed_series if coordinator has restrictions
-      const filteredAnswers = (answers || []).filter((a: any) =>
-        isTurmaAllowed(a.turma, allowedSeries)
-      );
+      // Flatten students from all projetos
+      const flattenedStudents = flattenProjetosStudents(projetos || [], schoolId, allowedSeries);
 
-      // Formatar resultados
-      const results = filteredAnswers.map((a: any) => ({
+      // Formatar resultados (manter mesma estrutura de resposta)
+      const results = flattenedStudents.map((a) => ({
         id: a.id,
         student_name: a.student_name,
         student_number: a.student_number,
         turma: a.turma,
-        score: a.score,
+        score: null, // projetos não tem score legado
         correct_answers: a.correct_answers,
         wrong_answers: a.wrong_answers,
-        blank_answers: a.blank_answers,
+        blank_answers: null, // calcular se necessário
         tri_lc: a.tri_lc,
         tri_ch: a.tri_ch,
         tri_cn: a.tri_cn,
         tri_mt: a.tri_mt,
-        exam_title: a.exams?.title || "Prova sem título",
+        exam_title: a.projeto_nome,
         created_at: a.created_at,
       }));
 
@@ -6514,24 +6580,17 @@ Para cada disciplina:
       // Buscar total de alunos únicos
       const uniqueStudents = new Set(results.map((r: any) => r.student_number || r.student_name));
 
-      // Buscar total de provas (filtrado por escola para school_admin)
-      let examsQuery = supabaseAdmin
-        .from("exams")
-        .select("*", { count: "exact", head: true });
-
-      if (profile?.role === 'school_admin' && schoolId) {
-        examsQuery = examsQuery.eq('school_id', schoolId);
-      }
-
-      const { count: examCount } = await examsQuery;
+      // Contar projetos como "provas"
+      const projetoCount = projetos?.length || 0;
 
       const stats = {
         totalStudents: uniqueStudents.size,
-        totalExams: examCount || 0,
+        totalExams: projetoCount,
         averageScore: scoreCount > 0 ? totalScore / scoreCount : 0,
         turmas: Array.from(turmasSet).sort(),
       };
 
+      console.log(`[ESCOLA RESULTS] Retornando ${results.length} alunos de ${projetoCount} projetos`);
       res.json({ results, stats });
 
     } catch (error: any) {
@@ -6544,6 +6603,7 @@ Para cada disciplina:
 
   // GET /api/escola/dashboard - Dashboard completo com rankings
   // PROTEGIDO: Apenas school_admin e super_admin podem ver dashboard
+  // MIGRADO: Agora lê de projetos em vez de student_answers
   app.get("/api/escola/dashboard", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const profile = (req as any).profile;
@@ -6551,39 +6611,25 @@ Para cada disciplina:
       const schoolId = profile?.school_id;
       console.log(`[ESCOLA DASHBOARD] User: ${profile?.name}, School: ${schoolId}, Allowed series: ${allowedSeries?.join(', ') || 'ALL'}`);
 
-      // Buscar todos os resultados (filtrado por escola para school_admin)
-      let answersQuery = supabaseAdmin
-        .from("student_answers")
-        .select(`
-          id,
-          student_name,
-          student_number,
-          turma,
-          correct_answers,
-          tri_lc,
-          tri_ch,
-          tri_cn,
-          tri_mt,
-          created_at,
-          exams(title)
-        `)
-        .order("created_at", { ascending: false });
+      // Buscar projetos (fonte oficial de dados corrigidos)
+      let projetosQuery = supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
+        .order("updated_at", { ascending: false });
 
-      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      // Filtrar por school_id se for school_admin
       if (profile?.role === 'school_admin' && schoolId) {
-        answersQuery = answersQuery.eq('school_id', schoolId);
+        projetosQuery = projetosQuery.eq('school_id', schoolId);
       }
 
-      const { data: answers, error: answersError } = await answersQuery;
+      const { data: projetos, error: projetosError } = await projetosQuery;
 
-      if (answersError) throw answersError;
+      if (projetosError) throw projetosError;
 
-      // Filter by allowed_series if coordinator has restrictions
-      const filteredAnswers = (answers || []).filter((a: any) =>
-        isTurmaAllowed(a.turma, allowedSeries)
-      );
+      // Flatten students from all projetos (already filtered by allowedSeries in helper)
+      const results = flattenProjetosStudents(projetos || [], schoolId, allowedSeries);
 
-      const results = filteredAnswers;
+      console.log(`[ESCOLA DASHBOARD] Flatten: ${results.length} alunos de ${projetos?.length || 0} projetos`);
 
       // Extrair séries das turmas (ex: "1ª Série A" -> "1ª Série")
       const extractSerie = (turma: string | null): string => {
@@ -6746,21 +6792,13 @@ Para cada disciplina:
         ? Math.max(...alunosComTri.map((a: any) => a.triMedia))
         : 0;
 
-      // Contar provas únicas (filtrado por escola para school_admin)
-      let examsQuery = supabaseAdmin
-        .from("exams")
-        .select("*", { count: "exact", head: true });
-
-      if (profile?.role === 'school_admin' && schoolId) {
-        examsQuery = examsQuery.eq('school_id', schoolId);
-      }
-
-      const { count: examCount } = await examsQuery;
+      // Contar projetos como "provas"
+      const projetoCount = projetos?.length || 0;
 
       res.json({
         stats: {
           totalAlunos: uniqueStudents.size,
-          totalProvas: examCount || 0,
+          totalProvas: projetoCount,
           mediaAcertos: totalCount > 0 ? totalCorrect / totalCount : 0,
           totalTurmas: turmasSet.size,
           totalSeries: seriesSet.size,
@@ -6826,13 +6864,20 @@ Para cada disciplina:
     try {
       const profile = (req as any).profile;
 
-      // 1. Buscar o projeto mais recente da tabela projetos
-      // A tabela projetos contém os dados completos (answer_key, question_contents, students)
-      const { data: projetos, error: projetosError } = await supabaseAdmin
+      // 1. Buscar projetos - filtrar por escola se não for super_admin
+      let query = supabaseAdmin
         .from("projetos")
-        .select("id, nome, answer_key, question_contents, students")
+        .select("id, nome, answer_key, question_contents, students, school_id")
         .order("updated_at", { ascending: false })
         .limit(5);
+
+      // Filtrar por escola se não for super_admin
+      if (profile.role !== 'super_admin' && profile.school_id) {
+        query = query.eq('school_id', profile.school_id);
+        console.log(`[ESCOLA QUESTION-STATS] Filtrando por escola: ${profile.school_id}`);
+      }
+
+      const { data: projetos, error: projetosError } = await query;
 
       if (projetosError) throw projetosError;
 
@@ -6988,6 +7033,7 @@ Para cada disciplina:
 
   // GET /api/escola/alunos-por-tri - Lista alunos filtrados por faixa TRI
   // PROTEGIDO: Apenas school_admin e super_admin
+  // MIGRADO: Agora lê de projetos em vez de student_answers
   app.get("/api/escola/alunos-por-tri", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const profile = (req as any).profile;
@@ -6999,44 +7045,30 @@ Para cada disciplina:
         return res.status(400).json({ error: "Categoria é obrigatória" });
       }
 
-      // Buscar todos os resultados
-      let answersQuery = supabaseAdmin
-        .from("student_answers")
-        .select(`
-          id,
-          student_name,
-          student_number,
-          turma,
-          correct_answers,
-          tri_lc,
-          tri_ch,
-          tri_cn,
-          tri_mt,
-          created_at
-        `)
-        .order("created_at", { ascending: false });
+      // Buscar projetos (fonte oficial de dados corrigidos)
+      let projetosQuery = supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
+        .order("updated_at", { ascending: false });
 
-      // Filtrar por school_id se não for super_admin ou se tiver school_id
+      // Filtrar por school_id se for school_admin
       if (profile?.role === 'school_admin' && schoolId) {
-        answersQuery = answersQuery.eq('school_id', schoolId);
+        projetosQuery = projetosQuery.eq('school_id', schoolId);
       }
 
-      const { data: answers, error: answersError } = await answersQuery;
+      const { data: projetos, error: projetosError } = await projetosQuery;
 
-      if (answersError) throw answersError;
+      if (projetosError) throw projetosError;
 
-      // Filter by allowed_series if coordinator has restrictions
-      const filteredAnswers = (answers || []).filter((a: any) =>
-        isTurmaAllowed(a.turma, allowedSeries)
-      );
+      // Flatten students from all projetos (already filtered by allowedSeries in helper)
+      const flattenedStudents = flattenProjetosStudents(projetos || [], schoolId, allowedSeries);
 
       // Agrupar por aluno e pegar o melhor resultado de TRI média
       const studentBest: Record<string, any> = {};
-      filteredAnswers.forEach((r: any) => {
+      flattenedStudents.forEach((r) => {
         const key = r.student_number || r.student_name;
-        const triMedia = r.tri_lc && r.tri_ch && r.tri_cn && r.tri_mt
-          ? (r.tri_lc + r.tri_ch + r.tri_cn + r.tri_mt) / 4
-          : null;
+        // Use tri_geral that's already calculated in the helper
+        const triMedia = r.tri_geral;
 
         if (!studentBest[key] || (triMedia && (!studentBest[key].triMedia || triMedia > studentBest[key].triMedia))) {
           studentBest[key] = {
@@ -7083,6 +7115,7 @@ Para cada disciplina:
         triMedia: Math.round(a.triMedia),
       }));
 
+      console.log(`[ESCOLA ALUNOS POR TRI] Categoria: ${category}, Total: ${resultado.length}`);
       res.json({
         category,
         total: resultado.length,
@@ -7097,11 +7130,14 @@ Para cada disciplina:
 
   // GET /api/escola/turmas/:turma/alunos - Alunos de uma turma com métricas comparativas
   // PROTEGIDO: Apenas school_admin e super_admin
+  // MIGRADO: Agora lê de projetos em vez de student_answers
   app.get("/api/escola/turmas/:turma/alunos", requireAuth, requireRole('super_admin', 'school_admin'), async (req: Request, res: Response) => {
     try {
       const { turma } = req.params;
       const decodedTurma = decodeURIComponent(turma);
       const allowedSeries = (req as any).profile?.allowed_series || null;
+      const profile = (req as any).profile;
+      const schoolId = profile?.school_id;
 
       // Verify coordinator has access to this turma
       if (!isTurmaAllowed(decodedTurma, allowedSeries)) {
@@ -7111,34 +7147,30 @@ Para cada disciplina:
         });
       }
 
-      // Buscar resultados da turma
-      const { data: answers, error } = await supabaseAdmin
-        .from("student_answers")
-        .select(`
-          id,
-          student_name,
-          student_number,
-          turma,
-          correct_answers,
-          tri_lc,
-          tri_ch,
-          tri_cn,
-          tri_mt,
-          created_at,
-          exams(title)
-        `)
-        .eq("turma", decodedTurma)
-        .order("correct_answers", { ascending: false });
+      // Buscar projetos (fonte oficial de dados corrigidos)
+      let projetosQuery = supabaseAdmin
+        .from("projetos")
+        .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
+        .order("updated_at", { ascending: false });
 
-      if (error) throw error;
+      // Filtrar por school_id se for school_admin
+      if (profile?.role === 'school_admin' && schoolId) {
+        projetosQuery = projetosQuery.eq('school_id', schoolId);
+      }
 
-      const results = answers || [];
+      const { data: projetos, error: projetosError } = await projetosQuery;
+
+      if (projetosError) throw projetosError;
+
+      // Flatten all students and filter by turma
+      const allStudents = flattenProjetosStudents(projetos || [], schoolId, null);
+      const results = allStudents.filter(s => s.turma === decodedTurma);
 
       // Calcular médias da turma
       let totalCorrect = 0, totalLC = 0, totalCH = 0, totalCN = 0, totalMT = 0;
       let count = 0, triCount = 0;
 
-      results.forEach((r: any) => {
+      results.forEach((r) => {
         if (r.correct_answers != null) {
           totalCorrect += r.correct_answers;
           count++;
@@ -7161,8 +7193,8 @@ Para cada disciplina:
       };
 
       // Agrupar por aluno (pegar melhor resultado)
-      const studentBest: Record<string, any> = {};
-      results.forEach((r: any) => {
+      const studentBest: Record<string, FlattenedStudent> = {};
+      results.forEach((r) => {
         const key = r.student_number || r.student_name;
         if (!studentBest[key] || (r.correct_answers || 0) > (studentBest[key].correct_answers || 0)) {
           studentBest[key] = r;
@@ -7171,8 +7203,8 @@ Para cada disciplina:
 
       // Ordenar e adicionar posição
       const alunos = Object.values(studentBest)
-        .sort((a: any, b: any) => (b.correct_answers || 0) - (a.correct_answers || 0))
-        .map((r: any, index: number) => ({
+        .sort((a, b) => (b.correct_answers || 0) - (a.correct_answers || 0))
+        .map((r, index: number) => ({
           posicao: index + 1,
           nome: r.student_name,
           matricula: r.student_number,
@@ -7184,10 +7216,11 @@ Para cada disciplina:
           comparacao: {
             acertos: r.correct_answers != null ? (r.correct_answers > mediaTurma.acertos ? "acima" : r.correct_answers < mediaTurma.acertos ? "abaixo" : "media") : null,
           },
-          prova: r.exams?.title,
+          prova: r.projeto_nome,
           data: r.created_at,
         }));
 
+      console.log(`[ESCOLA TURMA ALUNOS] Turma: ${decodedTurma}, Alunos: ${alunos.length}`);
       res.json({
         turma: decodedTurma,
         totalAlunos: alunos.length,
