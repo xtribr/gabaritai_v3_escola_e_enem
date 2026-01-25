@@ -26,6 +26,13 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  console.log('[ChangePasswordModal] Renderizado com props:', {
+    open,
+    isForced,
+    isFirstLogin,
+    userId
+  });
+
   const validatePassword = (password: string): string | null => {
     if (password.length < 6) {
       return 'A senha deve ter pelo menos 6 caracteres';
@@ -61,13 +68,26 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
 
     setIsLoading(true);
 
+    const finalCurrentPassword = (isForced && isFirstLogin) ? 'SENHA123' : currentPassword;
+
+    console.log('[ChangePasswordModal] DEBUG:', {
+      userId,
+      isForced,
+      isFirstLogin,
+      currentPassword: currentPassword ? '***' : 'empty',
+      finalCurrentPassword: finalCurrentPassword ? '***' : 'empty',
+      newPassword: newPassword ? '***' : 'empty'
+    });
+
     try {
       const response = await authFetch('/api/profile/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          currentPassword: isForced ? undefined : currentPassword,
+          // Se é primeiro login e isForced, enviar senha padrão como currentPassword
+          // Caso contrário, enviar senha digitada pelo usuário
+          currentPassword: finalCurrentPassword,
           newPassword,
           isForced
         }),
@@ -101,7 +121,7 @@ export function ChangePasswordModal({ open, onClose, onSuccess, isForced = false
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5" />
-            {isFirstLogin ? 'Alterar Senha' : (isForced ? 'Alterar Senha Obrigatório' : 'Alterar Senha')}
+            {isFirstLogin ? 'Alterar Senha (First)' : (isForced ? 'Alterar Senha Obrigatório (Forced)' : 'Alterar Senha [CÓDIGO NOVO v2.0]')}
           </DialogTitle>
           <DialogDescription>
             {isFirstLogin

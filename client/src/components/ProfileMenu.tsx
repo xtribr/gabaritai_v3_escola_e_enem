@@ -19,6 +19,8 @@ export function ProfileMenu() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
 
+  console.log('[ProfileMenu] CÓDIGO NOVO CARREGADO - v2.0');
+
   if (!profile) return null;
 
   const initials = profile.name
@@ -63,7 +65,10 @@ export function ProfileMenu() {
             <User className="h-4 w-4 mr-2" />
             Meu Perfil
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShowChangePassword(true)}>
+          <DropdownMenuItem onClick={() => {
+            console.log('[ProfileMenu] Abrindo modal com isForced=false e isFirstLogin=false');
+            setShowChangePassword(true);
+          }}>
             <Lock className="h-4 w-4 mr-2" />
             Alterar Senha
           </DropdownMenuItem>
@@ -82,6 +87,8 @@ export function ProfileMenu() {
           setShowChangePassword(false);
           // Mostrar toast de sucesso
         }}
+        isForced={false}
+        isFirstLogin={false}
         userId={profile.id}
       />
 

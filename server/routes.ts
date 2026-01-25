@@ -6487,11 +6487,21 @@ Para cada disciplina:
     try {
       const { userId, currentPassword, newPassword, isForced } = req.body;
 
+      console.log("[CHANGE-PASSWORD] ===== INÍCIO =====");
+      console.log("[CHANGE-PASSWORD] Request recebido:", {
+        userId,
+        isForced,
+        hasCurrentPassword: !!currentPassword,
+        currentPasswordLength: currentPassword?.length
+      });
+
       if (!userId || !newPassword) {
+        console.log("[CHANGE-PASSWORD] ❌ ERRO: userId ou newPassword faltando");
         return res.status(400).json({ error: "userId e newPassword são obrigatórios" });
       }
 
       if (newPassword.length < 6) {
+        console.log("[CHANGE-PASSWORD] ❌ ERRO: Senha muito curta");
         return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
       }
 
@@ -6502,45 +6512,80 @@ Para cada disciplina:
         .eq("id", userId)
         .single();
 
+      console.log("[CHANGE-PASSWORD] Profile encontrado:", {
+        email: profile?.email,
+        must_change_password: profile?.must_change_password,
+        hasError: !!profileError
+      });
+
       if (profileError || !profile) {
+        console.log("[CHANGE-PASSWORD] ❌ ERRO: Usuário não encontrado");
         return res.status(404).json({ error: "Usuário não encontrado" });
       }
 
-      // 🔒 SEGURANÇA: Verificar se troca forçada é realmente permitida
-      // isForced só é válido se must_change_password for true no banco
+      // 🔒 SEGURANÇA: Validar senha atual se fornecida
+      // Aceitar mudança se:
+      // 1. currentPassword fornecido e correto, OU
+      // 2. isForced=true E must_change_password=true (primeiro acesso real)
+
       const isReallyForced = isForced && profile.must_change_password === true;
 
-      if (!isReallyForced) {
-        // Não é primeiro acesso - exigir senha atual
-        if (!currentPassword) {
-          return res.status(400).json({ error: "Senha atual é obrigatória" });
-        }
+      console.log("[CHANGE-PASSWORD] Validação:", {
+        isForced,
+        must_change_password: profile.must_change_password,
+        isReallyForced,
+        hasCurrentPassword: !!currentPassword
+      });
 
+      // Se senha atual fornecida, validar
+      if (currentPassword) {
+        console.log("[CHANGE-PASSWORD] Validando senha atual...");
         const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
           email: profile.email,
           password: currentPassword
         });
 
         if (signInError) {
+          console.log("[CHANGE-PASSWORD] ❌ ERRO: Senha atual incorreta:", signInError.message);
           return res.status(400).json({ error: "Senha atual incorreta" });
         }
+        console.log("[CHANGE-PASSWORD] ✅ Senha atual validada");
+      } else if (!isReallyForced) {
+        // Sem senha atual E não é primeiro acesso real - rejeitar
+        console.log("[CHANGE-PASSWORD] ❌ ERRO: Senha atual é obrigatória (isReallyForced=false)");
+        return res.status(400).json({ error: "Senha atual é obrigatória" });
+      } else {
+        console.log("[CHANGE-PASSWORD] ✅ Primeiro acesso real detectado, pulando validação de senha atual");
       }
 
       // Atualizar a senha usando admin API
+      console.log("[CHANGE-PASSWORD] Atualizando senha...");
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
         password: newPassword
       });
 
       if (updateError) {
-        console.error("[PROFILE] Erro ao atualizar senha:", updateError);
+        console.error("[CHANGE-PASSWORD] ❌ ERRO ao atualizar senha:", updateError.message);
         return res.status(500).json({ error: "Erro ao alterar senha", details: updateError.message });
       }
 
+      console.log("[CHANGE-PASSWORD] ✅ Senha atualizada com sucesso");
+
       // Marcar must_change_password como false
-      await supabaseAdmin
+      console.log("[CHANGE-PASSWORD] Atualizando flag must_change_password para false...");
+      const { data: updateData, error: updateFlagError } = await supabaseAdmin
         .from("profiles")
         .update({ must_change_password: false })
-        .eq("id", userId);
+        .eq("id", userId)
+        .select();
+
+      if (updateFlagError) {
+        console.error("[CHANGE-PASSWORD] ⚠️ ERRO ao atualizar flag:", updateFlagError.message);
+      } else {
+        console.log("[CHANGE-PASSWORD] ✅ Flag atualizado com sucesso:", updateData);
+      }
+
+      console.log("[CHANGE-PASSWORD] ===== FIM =====");
 
       res.json({ success: true, message: "Senha alterada com sucesso" });
 

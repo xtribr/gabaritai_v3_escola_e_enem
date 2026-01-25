@@ -106,8 +106,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && data.id) {
         setProfile(data);
         // Verificar se precisa forçar troca de senha
+        console.log('[AuthContext] Verificando must_change_password:', data.must_change_password);
         if (data.must_change_password) {
+          console.log('[AuthContext] Mostrando modal de troca de senha forçada');
           setShowForceChangePassword(true);
+        } else {
+          console.log('[AuthContext] Não precisa trocar senha');
         }
       } else {
         console.warn('[AuthContext] Profile not found for userId:', userId);
@@ -183,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isStudent = profile?.role === 'student';
 
   const handleForcePasswordChangeSuccess = async () => {
+    console.log('[AuthContext] Senha alterada com sucesso, fechando modal e recarregando profile');
     setShowForceChangePassword(false);
     // Recarregar profile para atualizar must_change_password
     if (user && session) {
