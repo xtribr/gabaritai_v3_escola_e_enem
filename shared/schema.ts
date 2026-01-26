@@ -22,9 +22,9 @@ export const studentDataSchema = z.object({
 });
 
 export const questionContentSchema = z.object({
-  questionNumber: z.number(),
-  answer: z.string(),
-  content: z.string(),
+  questionNumber: z.number().int('Numero da questao deve ser inteiro').positive('Numero da questao deve ser positivo'),
+  answer: z.string().regex(/^[A-Ea-e]$/, 'Resposta deve ser A, B, C, D ou E'),
+  content: z.string().min(1, 'Conteudo nao pode ser vazio'),
 });
 
 export const answerKeySchema = z.object({

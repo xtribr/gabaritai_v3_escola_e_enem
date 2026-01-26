@@ -3,6 +3,7 @@ import {
   studentDataSchema,
   answerKeySchema,
   examTemplateSchema,
+  questionContentSchema,
 } from '../schema';
 
 describe('Schema Validation', () => {
@@ -183,6 +184,92 @@ describe('Schema Validation', () => {
       };
 
       const result = examTemplateSchema.safeParse(invalidTemplate);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('questionContentSchema', () => {
+    it('rejects invalid question number (negative)', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: -1,
+        answer: 'A',
+        content: 'Matematica',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid question number (zero)', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 0,
+        answer: 'A',
+        content: 'Matematica',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid answer (not A-E)', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 1,
+        answer: 'Z',
+        content: 'Matematica',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects empty content', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 1,
+        answer: 'A',
+        content: '',
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts valid question content with uppercase answer', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 1,
+        answer: 'A',
+        content: 'Matematica - Funcoes',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts valid question content with lowercase answer', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 1,
+        answer: 'e',
+        content: 'Portugues - Interpretacao',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts all valid answers A-E', () => {
+      const validAnswers = ['A', 'B', 'C', 'D', 'E', 'a', 'b', 'c', 'd', 'e'];
+
+      for (const answer of validAnswers) {
+        const result = questionContentSchema.safeParse({
+          questionNumber: 1,
+          answer,
+          content: 'Test content',
+        });
+
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it('rejects non-integer question number', () => {
+      const result = questionContentSchema.safeParse({
+        questionNumber: 1.5,
+        answer: 'A',
+        content: 'Matematica',
+      });
+
       expect(result.success).toBe(false);
     });
   });
