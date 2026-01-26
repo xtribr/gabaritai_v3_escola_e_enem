@@ -1,3 +1,16 @@
+// ============================================================================
+// Custom Type Aliases (for backwards compatibility with code imports)
+// ============================================================================
+
+export type UserRole = 'super_admin' | 'school_admin' | 'student';
+export type ExamStatus = 'draft' | 'active' | 'closed';
+export type AreaCode = 'LC' | 'CH' | 'CN' | 'MT';
+export type TriFaixa = 'baixo' | 'medio' | 'alto';
+
+// ============================================================================
+// Supabase Generated Types
+// ============================================================================
+
 export type Json =
   | string
   | number
@@ -220,6 +233,97 @@ export type Database = {
             columns: ["school_id"]
             isOneToOne: false
             referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exercise_lists: {
+        Row: {
+          area: string
+          arquivo_nome: string
+          arquivo_tipo: string
+          arquivo_url: string
+          created_at: string | null
+          id: string
+          ordem: number
+          tamanho_bytes: number | null
+          titulo: string
+          tri_max: number
+          tri_min: number
+        }
+        Insert: {
+          area: string
+          arquivo_nome: string
+          arquivo_tipo?: string
+          arquivo_url: string
+          created_at?: string | null
+          id?: string
+          ordem?: number
+          tamanho_bytes?: number | null
+          titulo: string
+          tri_max: number
+          tri_min: number
+        }
+        Update: {
+          area?: string
+          arquivo_nome?: string
+          arquivo_tipo?: string
+          arquivo_url?: string
+          created_at?: string | null
+          id?: string
+          ordem?: number
+          tamanho_bytes?: number | null
+          titulo?: string
+          tri_max?: number
+          tri_min?: number
+        }
+        Relationships: []
+      }
+      list_downloads: {
+        Row: {
+          downloaded_at: string | null
+          id: string
+          list_id: string
+          school_id: string | null
+          student_id: string
+          turma: string | null
+        }
+        Insert: {
+          downloaded_at?: string | null
+          id?: string
+          list_id: string
+          school_id?: string | null
+          student_id: string
+          turma?: string | null
+        }
+        Update: {
+          downloaded_at?: string | null
+          id?: string
+          list_id?: string
+          school_id?: string | null
+          student_id?: string
+          turma?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "list_downloads_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_downloads_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "list_downloads_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -575,6 +679,105 @@ export type Database = {
           },
         ]
       }
+      student_list_releases: {
+        Row: {
+          download_count: number | null
+          downloaded_at: string | null
+          exercise_list_id: string
+          id: string
+          released_at: string | null
+          student_id: string
+        }
+        Insert: {
+          download_count?: number | null
+          downloaded_at?: string | null
+          exercise_list_id: string
+          id?: string
+          released_at?: string | null
+          student_id: string
+        }
+        Update: {
+          download_count?: number | null
+          downloaded_at?: string | null
+          exercise_list_id?: string
+          id?: string
+          released_at?: string | null
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_list_releases_exercise_list_id_fkey"
+            columns: ["exercise_list_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_list_releases_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      student_study_plans: {
+        Row: {
+          area: string
+          conteudos_prioritarios: Json | null
+          created_at: string | null
+          exam_id: string
+          id: string
+          listas_recomendadas: string[] | null
+          student_id: string
+          student_number: string | null
+          tri_atual: number
+          tri_faixa: string
+          updated_at: string | null
+        }
+        Insert: {
+          area: string
+          conteudos_prioritarios?: Json | null
+          created_at?: string | null
+          exam_id: string
+          id?: string
+          listas_recomendadas?: string[] | null
+          student_id: string
+          student_number?: string | null
+          tri_atual: number
+          tri_faixa: string
+          updated_at?: string | null
+        }
+        Update: {
+          area?: string
+          conteudos_prioritarios?: Json | null
+          created_at?: string | null
+          exam_id?: string
+          id?: string
+          listas_recomendadas?: string[] | null
+          student_id?: string
+          student_number?: string | null
+          tri_atual?: number
+          tri_faixa?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_study_plans_exam_id_fkey"
+            columns: ["exam_id"]
+            isOneToOne: false
+            referencedRelation: "exams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_study_plans_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       students: {
         Row: {
           created_at: string | null
@@ -625,6 +828,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      study_contents: {
+        Row: {
+          area: string
+          conteudo: string
+          created_at: string | null
+          habilidade: string
+          id: string
+          tri_faixa: string
+          tri_score: number
+        }
+        Insert: {
+          area: string
+          conteudo: string
+          created_at?: string | null
+          habilidade: string
+          id?: string
+          tri_faixa: string
+          tri_score: number
+        }
+        Update: {
+          area?: string
+          conteudo?: string
+          created_at?: string | null
+          habilidade?: string
+          id?: string
+          tri_faixa?: string
+          tri_score?: number
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -781,4 +1014,10 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+// ============================================================================
+// Type Aliases (derived from Database types)
+// ============================================================================
+
+export type Profile = Database['public']['Tables']['profiles']['Row'];
 
