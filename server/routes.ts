@@ -29,6 +29,7 @@ import {
 } from "./src/answerSheetBatch.js";
 import { requireAuth, requireRole, requireSchoolAccess, type AuthenticatedRequest } from "./lib/auth.js";
 import { isTurmaAllowed } from "./lib/seriesFilter.js";
+import { authRateLimiter, passwordRateLimiter, registerRateLimiter } from "./middleware/rateLimiter.js";
 import {
   transformStudentsForSupabase,
   transformStudentFromSupabase,
@@ -6216,7 +6217,7 @@ Para cada disciplina:
   // POST /api/auth/login-matricula - Login por MATRÍCULA + SENHA (não por email)
   // Fluxo: Aluno digita matrícula + senha → backend busca email → autentica no Supabase
   // Se o aluno tem profile mas não tem Auth user, retorna needsRegistration: true
-  app.post("/api/auth/login-matricula", async (req: Request, res: Response) => {
+  app.post("/api/auth/login-matricula", authRateLimiter, async (req: Request, res: Response) => {
     try {
       const { matricula, senha } = req.body as { matricula: string; senha: string };
 
@@ -6302,7 +6303,7 @@ Para cada disciplina:
 
   // POST /api/auth/register-student - Registrar senha para aluno existente (primeiro acesso)
   // Aluno já tem profile (importado via CSV) mas não tem Auth user
-  app.post("/api/auth/register-student", async (req: Request, res: Response) => {
+  app.post("/api/auth/register-student", registerRateLimiter, async (req: Request, res: Response) => {
     const DEFAULT_PASSWORD = 'SENHA123';
 
     try {
@@ -6482,8 +6483,8 @@ Para cada disciplina:
   });
 
   // POST /api/profile/change-password - Alterar senha do usuário
-  // 🔒 PROTEGIDO: Requer autenticação
-  app.post("/api/profile/change-password", requireAuth, async (req: Request, res: Response) => {
+  // 🔒 PROTEGIDO: Requer autenticação + Rate limiting
+  app.post("/api/profile/change-password", passwordRateLimiter, requireAuth, async (req: Request, res: Response) => {
     try {
       const { userId, currentPassword, newPassword, isForced } = req.body;
 
