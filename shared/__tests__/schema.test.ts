@@ -4,6 +4,7 @@ import {
   answerKeySchema,
   examTemplateSchema,
   questionContentSchema,
+  examDisciplineSchema,
 } from '../schema';
 
 describe('Schema Validation', () => {
@@ -271,6 +272,89 @@ describe('Schema Validation', () => {
       });
 
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('examDisciplineSchema', () => {
+    it('rejects when endQuestion < startQuestion', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Matematica',
+        startQuestion: 10,
+        endQuestion: 5,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toContain('>=');
+      }
+    });
+
+    it('rejects negative startQuestion', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Matematica',
+        startQuestion: -1,
+        endQuestion: 10,
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects zero startQuestion', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Matematica',
+        startQuestion: 0,
+        endQuestion: 10,
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects empty name', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: '',
+        startQuestion: 1,
+        endQuestion: 10,
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts valid discipline', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Matematica',
+        startQuestion: 1,
+        endQuestion: 45,
+        color: '#FF0000',
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts discipline without optional color', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Linguagens',
+        startQuestion: 1,
+        endQuestion: 45,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts equal start and end question', () => {
+      const result = examDisciplineSchema.safeParse({
+        id: 'disc-1',
+        name: 'Redacao',
+        startQuestion: 1,
+        endQuestion: 1,
+      });
+
+      expect(result.success).toBe(true);
     });
   });
 });

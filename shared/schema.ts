@@ -203,7 +203,7 @@ export const examDisciplineSchema = z.object({
   endQuestion: z.number().int().positive("Questão final deve ser positiva"),
   color: z.string().optional(),
 }).refine(
-  (data: any) => data.endQuestion >= data.startQuestion,
+  (data) => data.endQuestion >= data.startQuestion,
   { message: "Questão final deve ser >= questão inicial" }
 );
 
@@ -215,7 +215,7 @@ export const examConfigurationSchema = z.object({
   name: z.string().min(3, "Nome deve ter no mínimo 3 caracteres"),
   totalQuestions: z.number().int().min(5, "Mínimo de 5 questões").max(500, "Máximo de 500 questões"),
   alternativesCount: z.number().int().refine(
-    (val: any) => val === 4 || val === 5,
+    (val) => val === 4 || val === 5,
     { message: "Alternativas devem ser 4 ou 5" }
   ),
   maxScoreTCT: z.number().positive("Nota máxima deve ser positiva"),
@@ -226,7 +226,7 @@ export const examConfigurationSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 }).refine(
-  (data: any) => {
+  (data) => {
     // Validar que disciplinas cobrem todas as questões sem overlap
     const allQuestions = new Set<number>();
     for (const disc of data.disciplines) {
