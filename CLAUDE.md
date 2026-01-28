@@ -232,3 +232,35 @@ Both use `supabaseAdmin.auth.admin.updateUserById()` to bypass session requireme
 ### Activating Students
 
 Students imported via Excel have profiles but no auth users. Use "Ativar Todos" button in school admin panel to create auth accounts with default password.
+
+## Painel da Escola (Modelo Padrão)
+
+O **Painel da Escola do Marista RN** (coordenadora Luciana) é o modelo de referência para todas as escolas. Qualquer desenvolvimento de novas funcionalidades deve usar este painel como base.
+
+### Estrutura Padrão (5 abas)
+
+| Aba | Funcionalidade |
+|-----|----------------|
+| Visão Geral | Dashboard com stats, rankings de turma, TRI por área, top/alunos em atenção |
+| Resultados | Tabela filtrável de resultados (série, turma, busca) com paginação |
+| Turmas | Cards por turma com métricas TRI e exportação Excel |
+| Estatísticas TRI | Dispersão, análise por questão (180q), conteúdos com mais erros |
+| Listas | Rastreamento de downloads de listas de exercícios |
+
+### Cores por Área (XTRI Brand)
+
+- **LC** (Linguagens): Cyan `#33B5E5`
+- **CH** (Humanas): Orange `#F26A4B`
+- **CN** (Natureza): Green `#10b981`
+- **MT** (Matemática): Indigo `#6366f1`
+
+### Limiares TRI
+
+- Acima da média: TRI ≥ 600
+- Na média: TRI 500-599
+- Abaixo da média: TRI < 500
+
+### Arquivos Principais
+
+- `client/src/pages/escola.tsx` - Componente do painel (~2500 linhas)
+- `server/routes.ts` - Endpoints `/api/escola/*` e `/api/coordinator/*`
