@@ -13211,16 +13211,19 @@ export default function Home() {
                         <span>{projeto.template}</span>
                       </div>
                       <div className="flex gap-2 mt-2">
-                        {projeto.dia1Processado && (
-                          <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-2 py-0.5 rounded">
-                            Dia 1 ✓
-                          </span>
-                        )}
-                        {projeto.dia2Processado && (
-                          <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-2 py-0.5 rounded">
-                            Dia 2 ✓
-                          </span>
-                        )}
+                        {projeto.dia1Processado && projeto.dia2Processado ? (
+                          <Badge variant="default" className="text-xs bg-green-600 text-white">
+                            Dia 1+2 Completo
+                          </Badge>
+                        ) : projeto.dia2Processado ? (
+                          <Badge variant="secondary" className="text-xs">
+                            Dia 2
+                          </Badge>
+                        ) : projeto.dia1Processado ? (
+                          <Badge variant="secondary" className="text-xs">
+                            Dia 1
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
                         Atualizado: {new Date(projeto.updatedAt).toLocaleString('pt-BR')}
