@@ -2728,7 +2728,11 @@ export default function Home() {
   const carregarListaProjetos = async () => {
     try {
       setProjetosLoading(true);
-      const response = await authFetch("/api/projetos");
+      // SEGURANÇA: Filtrar projetos por escola selecionada
+      const url = selectedSchoolId
+        ? `/api/projetos?school_id=${selectedSchoolId}`
+        : "/api/projetos";
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Erro ao carregar projetos");
       const data = await response.json();
       setProjetosLista(data.projetos || []);
@@ -2897,8 +2901,12 @@ export default function Home() {
   const carregarProjeto = async (id: string, merge: boolean = false) => {
     try {
       setProjetosLoading(true);
-      
-      const response = await authFetch(`/api/projetos/${id}`);
+
+      // SEGURANÇA: Enviar school_id para validação no backend
+      const url = selectedSchoolId
+        ? `/api/projetos/${id}?school_id=${selectedSchoolId}`
+        : `/api/projetos/${id}`;
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Erro ao carregar projeto");
       
       const data = await response.json();
@@ -4300,8 +4308,15 @@ export default function Home() {
 
     try {
       // 1. Buscar dados do projeto Dia 1
-      const response = await authFetch(`/api/projetos/${idToUse}`);
+      // SEGURANÇA: Enviar school_id para validação no backend
+      const fetchUrl = selectedSchoolId
+        ? `/api/projetos/${idToUse}?school_id=${selectedSchoolId}`
+        : `/api/projetos/${idToUse}`;
+      const response = await authFetch(fetchUrl);
       if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error("Acesso negado: projeto pertence a outra escola");
+        }
         throw new Error("Falha ao carregar projeto Dia 1");
       }
       const { projeto: projetoDia1 } = await response.json();
@@ -4557,6 +4572,8 @@ export default function Home() {
         dia2Processado: true,
         triScores: Object.fromEntries(triScoresMapFinal),
         triScoresByArea: Object.fromEntries(triScoresByAreaMapFinal),
+        // SEGURANÇA: Enviar school_id para validação no backend
+        schoolId: selectedSchoolId,
       };
 
       const saveResp = await authFetch(`/api/projetos/${idToUse}`, {
@@ -6108,8 +6125,11 @@ export default function Home() {
                     description: "Procurando projeto salvo para mesclar...",
                   });
 
-                  // Buscar projetos salvos
-                  const response = await authFetch("/api/projetos");
+                  // Buscar projetos salvos (filtrados por escola)
+                  const url = selectedSchoolId
+                    ? `/api/projetos?school_id=${selectedSchoolId}`
+                    : "/api/projetos";
+                  const response = await authFetch(url);
                   if (!response.ok) throw new Error("Erro ao buscar projetos");
                   const data = await response.json();
                   const projetos = data.projetos || [];

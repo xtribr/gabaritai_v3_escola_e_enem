@@ -3542,14 +3542,27 @@ Para cada disciplina:
     }
   });
 
-  // GET /api/projetos - Listar todos os projetos
-  // PROTEGIDO: Apenas super_admin pode ver projetos
+  // GET /api/projetos - Listar projetos da escola
+  // SEGURANÇA: Filtra por school_id para isolamento de dados entre escolas
   app.get("/api/projetos", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
-      const { data, error } = await supabaseAdmin
+      const { school_id } = req.query;
+      const authReq = req as AuthenticatedRequest;
+
+      // Determinar school_id: query param > perfil do usuário
+      const schoolId = school_id as string || authReq.profile?.school_id;
+
+      let query = supabaseAdmin
         .from('projetos')
-        .select('id, nome, descricao, template, students, dia1_processado, dia2_processado, created_at, updated_at')
+        .select('id, nome, descricao, template, students, school_id, dia1_processado, dia2_processado, created_at, updated_at')
         .order('updated_at', { ascending: false });
+
+      // SEGURANÇA: Filtrar por school_id se fornecido
+      if (schoolId) {
+        query = query.eq('school_id', schoolId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error("[PROJETOS] Erro Supabase ao listar:", error);
@@ -3563,6 +3576,7 @@ Para cada disciplina:
         descricao: p.descricao,
         template: (p.template as any)?.name || p.template,
         totalAlunos: (p.students as any[])?.length || 0,
+        schoolId: p.school_id,
         dia1Processado: p.dia1_processado || false,
         dia2Processado: p.dia2_processado || false,
         createdAt: p.created_at,
@@ -3582,10 +3596,15 @@ Para cada disciplina:
   });
 
   // GET /api/projetos/:id - Carregar projeto específico
-  // PROTEGIDO: Apenas super_admin pode ver projetos
+  // SEGURANÇA: Valida school_id para isolamento de dados entre escolas
   app.get("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const { school_id } = req.query;
+      const authReq = req as AuthenticatedRequest;
+
+      // Determinar school_id esperado: query param > perfil do usuário
+      const expectedSchoolId = school_id as string || authReq.profile?.school_id;
 
       const { data, error } = await supabaseAdmin
         .from('projetos')
@@ -3602,6 +3621,13 @@ Para cada disciplina:
         throw error;
       }
 
+      // SEGURANÇA: Validar que o projeto pertence à escola do usuário
+      if (expectedSchoolId && data.school_id && data.school_id !== expectedSchoolId) {
+        console.warn(`[PROJETOS] ACESSO NEGADO: Usuário tentou acessar projeto de outra escola. Projeto school_id=${data.school_id}, esperado=${expectedSchoolId}`);
+        res.status(403).json({ error: "Acesso negado: projeto pertence a outra escola" });
+        return;
+      }
+
       res.json({
         success: true,
         projeto: projetoDbToFrontend(data)
@@ -3615,10 +3641,11 @@ Para cada disciplina:
   });
 
   // PUT /api/projetos/:id - Atualizar projeto (usado para merge Dia1+Dia2)
-  // PROTEGIDO: Apenas super_admin pode atualizar projetos
+  // SEGURANÇA: Valida school_id para isolamento de dados entre escolas
   app.put("/api/projetos/:id", requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const authReq = req as AuthenticatedRequest;
       const {
         nome,
         descricao,
@@ -3648,6 +3675,14 @@ Para cada disciplina:
           return;
         }
         throw fetchError;
+      }
+
+      // SEGURANÇA: Validar que o projeto pertence à escola do usuário
+      const expectedSchoolId = schoolId || authReq.profile?.school_id;
+      if (expectedSchoolId && existingData.school_id && existingData.school_id !== expectedSchoolId) {
+        console.warn(`[PROJETOS] ACESSO NEGADO: Usuário tentou atualizar projeto de outra escola. Projeto school_id=${existingData.school_id}, esperado=${expectedSchoolId}`);
+        res.status(403).json({ error: "Acesso negado: projeto pertence a outra escola" });
+        return;
       }
 
       const projetoExistente = projetoDbToFrontend(existingData);
@@ -5597,13 +5632,22 @@ Para cada disciplina:
       }
 
       const studentNumber = profile.student_number;
-      console.log(`[STUDENT_ANSWERS] Buscando resultados para matrícula: ${studentNumber}`);
+      const studentSchoolId = profile.school_id;
+      console.log(`[STUDENT_ANSWERS] Buscando resultados para matrícula: ${studentNumber}, escola: ${studentSchoolId}`);
 
       // Buscar projetos que contenham este aluno (pela matrícula)
-      const { data: projetos, error: projetosError } = await supabaseAdmin
+      // SEGURANÇA: Filtrar por school_id do aluno para isolamento de dados
+      let query = supabaseAdmin
         .from("projetos")
         .select("id, nome, students, tri_scores_by_area, school_id, updated_at, created_at")
         .order("updated_at", { ascending: false });
+
+      // Filtrar por escola do aluno se disponível
+      if (studentSchoolId) {
+        query = query.eq("school_id", studentSchoolId);
+      }
+
+      const { data: projetos, error: projetosError } = await query;
 
       if (projetosError) {
         console.error("[STUDENT_ANSWERS] Erro ao buscar projetos:", projetosError);
@@ -5687,10 +5731,10 @@ Para cada disciplina:
     try {
       const { studentId, examId: projetoId } = req.params;
 
-      // 1. Buscar profile para pegar student_number (matrícula)
+      // 1. Buscar profile para pegar student_number (matrícula) e school_id
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .select("student_number")
+        .select("student_number, school_id")
         .eq("id", studentId)
         .single();
 
@@ -5699,18 +5743,25 @@ Para cada disciplina:
       }
 
       const studentNumber = profile.student_number;
-      console.log(`[STUDENT_DASHBOARD_DETAILS] Buscando detalhes para matrícula: ${studentNumber}, projeto: ${projetoId}`);
+      const studentSchoolId = profile.school_id;
+      console.log(`[STUDENT_DASHBOARD_DETAILS] Buscando detalhes para matrícula: ${studentNumber}, projeto: ${projetoId}, escola: ${studentSchoolId}`);
 
       // 2. Buscar projeto pelo ID
       const { data: projeto, error: projetoError } = await supabaseAdmin
         .from("projetos")
-        .select("id, nome, students, answer_key, question_contents, tri_scores_by_area, updated_at, created_at")
+        .select("id, nome, students, answer_key, question_contents, tri_scores_by_area, school_id, updated_at, created_at")
         .eq("id", projetoId)
         .single();
 
       if (projetoError || !projeto) {
         console.error("[STUDENT_DASHBOARD_DETAILS] Projeto não encontrado:", projetoError);
         return res.status(404).json({ error: "Prova não encontrada" });
+      }
+
+      // SEGURANÇA: Validar que o projeto pertence à escola do aluno
+      if (studentSchoolId && projeto.school_id && projeto.school_id !== studentSchoolId) {
+        console.warn(`[STUDENT_DASHBOARD_DETAILS] ACESSO NEGADO: Aluno tentou acessar projeto de outra escola. Projeto school_id=${projeto.school_id}, aluno school_id=${studentSchoolId}`);
+        return res.status(403).json({ error: "Acesso negado: prova pertence a outra escola" });
       }
 
       const students = (projeto.students as any[]) || [];
