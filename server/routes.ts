@@ -3484,7 +3484,8 @@ Para cada disciplina:
         triScores,
         triScoresByArea,
         dia1Processado: dia1ProcessadoEnviado,
-        dia2Processado: dia2ProcessadoEnviado
+        dia2Processado: dia2ProcessadoEnviado,
+        schoolId
       } = req.body;
 
       if (!nome || nome.trim() === "") {
@@ -3505,7 +3506,8 @@ Para cada disciplina:
           tri_scores: triScores || null,
           tri_scores_by_area: triScoresByArea || null,
           dia1_processado: dia1ProcessadoEnviado ?? template?.name === "ENEM - Dia 1",
-          dia2_processado: dia2ProcessadoEnviado ?? template?.name === "ENEM - Dia 2"
+          dia2_processado: dia2ProcessadoEnviado ?? template?.name === "ENEM - Dia 2",
+          school_id: schoolId || null
         })
         .select()
         .single();
@@ -3620,7 +3622,8 @@ Para cada disciplina:
         triScoresByArea,
         mergeStudents, // Flag para mesclar alunos por matrícula
         dia1Processado: dia1ProcessadoEnviado,
-        dia2Processado: dia2ProcessadoEnviado
+        dia2Processado: dia2ProcessadoEnviado,
+        schoolId
       } = req.body;
 
       // Buscar projeto existente no Supabase
@@ -3822,7 +3825,9 @@ Para cada disciplina:
           tri_scores_by_area: triScoresByAreaFinal,
           // Acumular dias processados: manter true se já estava true OU se está sendo processado agora
           dia1_processado: dia1ProcessadoEnviado || projetoExistente.dia1Processado || template?.name === "ENEM - Dia 1",
-          dia2_processado: dia2ProcessadoEnviado || projetoExistente.dia2Processado || template?.name === "ENEM - Dia 2"
+          dia2_processado: dia2ProcessadoEnviado || projetoExistente.dia2Processado || template?.name === "ENEM - Dia 2",
+          // Atualizar school_id se fornecido, senão manter o existente
+          school_id: schoolId !== undefined ? schoolId : (existingData as any).school_id
         })
         .eq('id', id)
         .select()

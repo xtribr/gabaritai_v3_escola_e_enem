@@ -2847,6 +2847,7 @@ export default function Home() {
         triScoresByArea: triScoresByArea.size > 0 ? Object.fromEntries(triScoresByArea) : null,
         dia1Processado: isDia1 || isENEMCompleto,
         dia2Processado: isDia2 || isENEMCompleto,
+        schoolId: selectedSchoolId, // Associar projeto à escola selecionada
       };
       
       let response;
